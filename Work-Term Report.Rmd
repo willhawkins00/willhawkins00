@@ -1,0 +1,1887 @@
+---
+title: "The Early Indicator Experiment (EIE)"
+author: "Will Hawkins"
+date: "12/07/2021"
+output:
+  html_document:
+    df_print: paged
+  html_notebook:
+    fig_width: 16
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = 'C:/Users/wathl/OneDrive/Documents/STATS CAN COOP/Work-Term Report')
+```
+
+## Project Outline:
+
+**Project Start Date: May 20th**
+```{r Back-End Code, echo=FALSE, message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+library(tidyverse)
+library(readxl)
+library(writexl)
+library(DT)
+options(scipen = 999)
+#Creates master data frame of all reports with index  numbers representing different report dates
+#************************************************************************************
+listxlsx<-list.files(pattern="*^[^~]*.xlsx")#creates an array of all report file names
+folder<-rep(list(data.frame(matrix(0,nrow = 112,ncol = 13))),length(listxlsx))
+folder=purrr::map_df(1:length(listxlsx),function(i) folder[[i]] %>% mutate(index= i))#adds index number for each daily repor(ie: day 1, 2, 3 etc)
+q=1
+w=112
+for(k in 1:length(listxlsx))
+{
+  folder[q:w,1:13]<-read_excel(listxlsx[k])#spits tables into massive dataframe
+  q=q+112
+  w=w+112
+}
+colnames(folder)<-c("NAICS Code","Geography Code","Current Period (202104)","Previous Period (202103)","202103 to 202104 Change","202103 to 202104 %Change","Same Period Previous Year (202004)","202004 to 202104 Change","202004 to 202104 % Change","Previous Period Previous Year (202003)","202003 to 202004 Change","202003 to 202004 % Change","% of NAICS Total","Index #")
+#**************************************************************************************
+#Creation of data frames subset, allNaics in all of Canada and all Naics at the Geo levels:
+#******************************************************************************************
+subsets<-rep(list(data.frame(matrix(0,nrow = 112,ncol = 6))),length(listxlsx))
+subsets=purrr::map_df(1:length(listxlsx),function(i) subsets[[i]] %>%mutate(index= i))#subsets all dataframes in folder to only first 6 columns
+allNallC<-rep(list(data.frame(matrix(0,nrow = 1,ncol = 4))),length(listxlsx))#creates data frame of MOM for all wholesale over tracking period
+allNdifG<-rep(list(data.frame(matrix(0,nrow = 13,ncol = 5))),length(listxlsx))#creates data frame of MOM for each province at wholesale lvl
+allNallC=purrr::map_df(1:length(listxlsx),function(i) allNallC[[i]] %>%mutate(index= i))
+allNdifG=purrr::map_df(1:length(listxlsx),function(i) allNdifG[[i]] %>%mutate(index= i))
+#*******************************************************************************************
+#NAICS Contribution Table(NCT)
+#*******************************************************************************************
+N0<-rep(list(data.frame(matrix(0,nrow = 7,ncol = 2))),length(listxlsx))#creates table of MOM value change for each NAICS at the national level
+N0=purrr::map_df(1:length(listxlsx),function(i) N0[[i]] %>%mutate(index= i))
+mdec<-rep(list(data.frame(matrix(0,nrow = 1,ncol = 1))),length(listxlsx))#sums up the total amount of decrease in MOM over tracking period
+mdec=purrr::map_df(1:length(listxlsx),function(i) mdec[[i]] %>%mutate(index= i))
+minc<-rep(list(data.frame(matrix(0,nrow = 1,ncol = 1))),length(listxlsx))
+minc=purrr::map_df(1:length(listxlsx),function(i) minc[[i]] %>%mutate(index= i))#sums up increase
+colnames(subsets)<-c("NAICS Code","Geography Code","Current Period (202104)","Previous Period (202103)","202103 to 202104 Change","202103 to 202104 %Change","Date")
+colnames(allNallC)<-c("Current Period (202104)","Previous Period (202103)","202103 to 202104 Change","202103 to 202104 %Change","Date")
+colnames(allNdifG)<-c("Geography Code","Current Period (202104)","Previous Period (202103)","202103 to 202104 Change","202103 to 202104 %Change","Index #")
+colnames(N0)<-c("NAICS Code","MOM Change")
+colnames(mdec)<-c("Total Decrease for Month","Index #")
+colnames(minc)<-c("Total Increase for Month","Index#")
+mdec[,1]<-as.double(unlist(mdec[,1]))#when all data entered the frames above, it was written as characters. eg: "2.43" should've been 2.43
+minc[,1]<-as.double(unlist(minc[,1]))#as.double fixes this, also have to fix column to not be formatted as a list
+
+#These data frames contain the proportion of each Naics contribution to a Monthly increase/decrease
+relrated<-rep(list(data.frame(matrix(,nrow = 7,ncol = 2))),length(listxlsx))
+relrated=purrr::map_df(1:length(listxlsx),function(i) relrated[[i]] %>%mutate(index= i))
+relratei<-rep(list(data.frame(matrix(,nrow = 7,ncol = 2))),length(listxlsx))
+relratei=purrr::map_df(1:length(listxlsx),function(i) relratei[[i]] %>%mutate(index= i))
+NCT<-as.data.frame(matrix(,nrow = 7,ncol = (length(listxlsx)+1)))#master data frame for all NAICS proportions of increases and decreases
+colnames(relrated)<-c("NAICS Code","Proportion of Monthly Decrease", "Date")
+colnames(relratei)<-c("NAICS Code","Proportion of Monthly Increase", "Date")
+#******************************************************
+#Filling the frames:
+#******************************************************
+o=1
+e=112
+y=2
+z2=14
+g=1
+a=13
+r = 15
+d=1
+f=1
+l=1
+x=1
+for(u in 1:length(listxlsx))
+{
+  subsets[o:e,1:6]<- folder[o:e,1:6]#cuts  off columns unrelated to mission objective
+  allNallC[u,1:4]<-subsets[o,3:6]#grabs MOM at 00000 level for each reporting day and loads it into data frame
+  allNdifG[g:a,1:5]<-subsets[y:z2,2:6]#same thing but with geos at the 0 level
+  for(b in 1:7)
+  {
+    N0[d,1] <- subsets[r, 1]#captures each Naics identificiation code for the proportional measurements later
+    N0[d,2]<-subsets[r,5]#captures total value change in each Naics at the 0 level
+    r = r + 14
+    d=d+1
+  }
+  mdec[u,1]=0#these sum up the total increase & decrease for the month
+  minc[u,1]=0
+  for (n in 1:7)
+  {
+    if (N0[f,2] < 0) {
+      mdec[u,1] = sum(N0[f,2], mdec[u,1])
+    }
+    else{
+      minc[u,1] = sum(N0[f,2], minc[u,1])
+    }
+    f=f+1
+  }
+  for (j in 1:7)
+  {
+    if (N0[l,2] < 0)
+     
+    {
+      relrated[l,1] <- N0[j, 1]#attaches NAICS code to it's corresponding value
+      relrated[l,2]<-N0[l,2]/mdec[u,1]#ratio of specific NAICs change to toal decrease/increase
+      NCT[j,u+1]<-abs(relrated[l,2])
+    }
+    else
+    {
+      relratei[l,1] <- N0[j, 1]
+      relratei[l,2]<-N0[l,2]/minc[u,1]
+      NCT[j,u+1]<-abs(relratei[l,2])
+    }
+   
+    l=l+1
+   
+  }
+  r=r+14
+  y=y+112
+  z2=z2+112
+  g=g+13
+  a=a+13
+  o=o+112
+  e=e+112
+}
+#*******************************************************************************************************
+relrated<-na.omit(relrated)#removes NAICS from both relative decrease and increase that have no value
+relratei<-na.omit(relratei)#(ie: if 413 is part of the increase, it removes its cell from the decrease)
+relrated[,2]<-round(relrated[,2],digits=2)#rounds values in column to two decimal places
+relratei[,2]<-round(relratei[,2],digits=2)
+#********************************************************************************************************
+NCT[1:7,2:(length(listxlsx)+1)]<-round(NCT[1:7,2:(length(listxlsx)+1)],digits=2)
+NCT<-as.data.frame(t(NCT))#transposes frames
+colnames(NCT)<-c("411","413","414","415","416","417","418")
+NCT<-na.omit(NCT)
+APNCT<-NCT[1:8,]#segmenting the NAICS proportions by month
+MAYNCT<-NCT[9:16,]
+JUNENCT<-NCT[17:24,]
+JLYNCT<-NCT[25:32,]
+row.names(APNCT)<-c(1:8)
+row.names(MAYNCT)<-c(1:8)
+row.names(JUNENCT)<-c(1:8)
+row.names(JLYNCT)<-c(1:8)
+#********************************************************************************************************
+#Creating Master Provincial Tracking Table
+#********************************************************************************************************
+c2<-vector("numeric",13)
+allNdifG[,1]<-as.character(allNdifG[,1])
+allNallC[,4]<-round(as.double(allNallC[,4]),digits = 2)
+allNdifG[,5]<-round(as.double(allNdifG[,5]),digits=2)
+clmnf<-allNdifG[,c(1,5:6)]
+formclmnf<-as.data.frame(matrix(0,nrow = 13,ncol=length(listxlsx)+1))
+j2<-vector("numeric",13)
+for (a2 in 1:13)#loop to flip previou data frames so date #s are columns and geo codes are rows
+{
+  c2[a2]=a2
+  j2[a2]=a2
+  formclmnf[a2,1]=as.double(clmnf[a2,1])
+  for (b2 in 2:(length(listxlsx)+1))
+  {
+    c2[a2]=c2[a2]+13
+    formclmnf[a2,b2]=as.double(clmnf[j2[a2],2])
+    j2[a2]=j2[a2]+13
+  }
+}
+formclmnf[,1]<-allNdifG[1:13,1]
+colnames(formclmnf)<-c("Geography Code",1:length(listxlsx))
+#*****************************************************************************************
+#Creating Master Weighted Response Rate Sheet and Tracking Table
+#*****************************************************************************************
+listwrr<-list.files(pattern="^[^~]*.csv")
+wrrfolder<-rep(list(data.frame(matrix(,nrow = 7063,ncol = 10))),length(listwrr))#creates array of 10x7063 matrices
+wrrfolder=purrr::map_df(1:length(listwrr),function(i) wrrfolder[[i]] %>% mutate(index= i))
+wrr<-matrix(0,nrow = length(listwrr),ncol=1)
+p2=1
+q2=7063
+t2=5
+for(r2 in 1:length(listwrr))#fills master folder of weighted response rates- same idea as opening loop
+{
+  wrrfolder[p2:q2,1:10]<-read_excel(listwrr[r2])
+  wrr[r2,]<-wrrfolder[t2,10]#selects the specific response rate related to the MWTS
+  t2=t2+7063
+  p2=p2+7063
+  q2=q2+7063
+}
+wrr<-round(as.double(wrr), digits=2)
+tdy<-vector("numeric", length(listwrr))#adds tracking day column to weighted response rate matrix-can defintily modularize
+tdy[1:8]<-1:8
+tdy[9:16]<-1:8
+tdy[17:24]<-1:8
+tdy[25:32]<-1:8
+wrr<-cbind(wrr,tdy)
+colnames(wrr)<-c("Value","TrackingDay")
+aprwrr<-as.data.frame(wrr[1:8,])
+maywrr<-as.data.frame(wrr[9:16,])
+jnewrr<-as.data.frame(wrr[17:24,])
+jlywrr<-as.data.frame(wrr[25:32,])
+#****************************************************************************************
+#Calculating Direction Statistics
+#****************************************************************************************
+#April:
+freshobapr<-matrix(0,nrow = length(formclmnf[,1]),ncol=1)#gathers the most recent observation of MOM for each geo code for april
+freshobapr[1:length(formclmnf[,1]),]<-formclmnf[,9]#sets all array elements to the last value of the tracking period
+directcountapr<-matrix(0,nrow = 1,ncol=length(formclmnf[,1]))#counter of the amount of times we get the direction right in april
+directionapr<-matrix(0,nrow = 1,ncol=length(formclmnf[,1]))#meant to display ratio of amount of times we get direction correct for each province over the total amount of days in tracking period
+colnames(directionapr)<-formclmnf[1:length(formclmnf[,1]),1]
+aprMDT<-as.data.frame(matrix(0,nrow=14,ncol=8))#master data frame where each element represents a True or False condition
+colnames(aprMDT)<-c("GC",1:7)# as to whether we got the direction right for that province on that day.
+aprMDT[1:13,1]<-formclmnf[1:13,1]#Bottom of table creates a ratio of how many provinces we are getting correct
+aprMDT[1:13,2:8]<-"F"
+aprMDT[14,1]<-"Total"
+#May:
+freshobmay<-matrix(0,nrow = length(formclmnf[,1]),ncol=1)#gathers the most recent observation of MOM for each geo code for may
+freshobmay[1:length(formclmnf[,1]),]<-formclmnf[,17]
+directcountmay<-matrix(0,nrow = 1,ncol=length(formclmnf[,1]))#counter of the amount of times we get the direction right in may
+directionmay<-matrix(0,nrow = 1,ncol=length(formclmnf[,1]))
+colnames(directionmay)<-formclmnf[1:length(formclmnf[,1]),1]
+mayMDT<-as.data.frame(matrix(0,nrow = 14,ncol = 8))
+mayMDT[1:13,1]<-formclmnf[1:13,1]
+colnames(mayMDT)<-c("GC",1:7)
+mayMDT[1:13,2:8]<-"F"
+mayMDT[14,1]<-"Total"
+#June:
+freshobjne<-matrix(0,nrow = length(formclmnf[,1]),ncol=1)
+freshobjne[1:length(formclmnf[,1]),]<-formclmnf[,25]
+directcountjne<-matrix(0,nrow = 1,ncol=length(formclmnf[,1]))
+directionjne<-matrix(0,nrow = 1,ncol=length(formclmnf[,1]))
+colnames(directionjne)<-formclmnf[1:length(formclmnf[,1]),1]
+jneMDT<-as.data.frame(matrix(0,nrow = 14,ncol = 8))
+colnames(jneMDT)<-c("GC",1:7)
+jneMDT[1:13,1]<-formclmnf[1:13,1]
+jneMDT[1:13,2:8]<-"F"
+jneMDT[14,1]<-"Total"
+#July:
+freshobjly<-matrix(0,nrow = length(formclmnf[,1]),ncol=1)
+freshobjly[1:length(formclmnf[,1]),]<-formclmnf[,33]
+directcountjly<-matrix(0,nrow = 1,ncol=length(formclmnf[,1]))
+directionjly<-matrix(0,nrow = 1,ncol=length(formclmnf[,1]))
+colnames(directionjly)<-formclmnf[1:length(formclmnf[,1]),1]
+jlyMDT<-as.data.frame(matrix(0,nrow = 14,ncol = 8))
+colnames(jlyMDT)<-c("GC",1:7)
+jlyMDT[1:13,1]<-formclmnf[1:13,1]
+jlyMDT[1:13,2:8]<-"F"
+jlyMDT[14,1]<-"Total"
+for(v2 in 1:13)
+{
+for (u2 in 2:8)
+{
+ if (as.double(freshobapr[v2])*as.double(formclmnf[v2,u2])>0)
+ {
+   directcountapr[v2]=directcountapr[v2]+1
+   aprMDT[v2,u2]<-"T"
+ }
+  if (as.double(freshobmay[v2])*as.double(formclmnf[v2,(u2+8)])>0)
+  {
+    directcountmay[v2]=directcountmay[v2]+1
+    mayMDT[v2,u2]<-"T"
+  }
+  if (as.double(freshobjne[v2])*as.double(formclmnf[v2,(u2+16)])>0)
+  {
+    directcountjne[v2]=directcountjne[v2]+1
+    jneMDT[v2,u2]<-"T"
+  }
+  if (as.double(freshobjly[v2])*as.double(formclmnf[v2,(u2+24)])>0)
+  {
+    directcountjly[v2]=directcountjly[v2]+1
+    jlyMDT[v2,u2]<-"T"
+  }
+}
+  directionapr[v2]<-as.double(directcountapr[v2]/7)#converts how often we get direction right to ratio
+  directionmay[v2]<-as.double(directcountmay[v2]/7)
+  directionjne[v2]<-as.double(directcountjne[v2]/7)
+  directionjly[v2]<-as.double(directcountjly[v2]/7)
+}
+Tcounterapr<-matrix(0,nrow=1,ncol=7)#counts the amount of geos with the correct direction on each tracking day
+Tcountermay<-matrix(0,nrow=1,ncol=7)
+Tcounterjne<-matrix(0,nrow=1,ncol=7)
+Tcounterjly<-matrix(0,nrow=1,ncol=7)
+for(o in 2:8)
+{
+  for(y in 1:13)
+  {
+    if(aprMDT[y,o]=="T")
+    {
+      Tcounterapr[(o-1)]=Tcounterapr[(o-1)]+1
+    }
+    if(mayMDT[y,o]=="T")
+    {
+      Tcountermay[(o-1)]=Tcountermay[(o-1)]+1
+    }
+    if(jneMDT[y,o]=="T")
+    {
+      Tcounterjne[(o-1)]=Tcounterjne[(o-1)]+1
+    }
+    if(jlyMDT[y,o]=="T")
+    {
+      Tcounterjly[(o-1)]=Tcounterjly[(o-1)]+1
+    }
+  }
+  aprMDT[14,o]<-Tcounterapr[(o-1)]/13
+  mayMDT[14,o]<-Tcountermay[(o-1)]/13
+  jneMDT[14,o]<-Tcounterjne[(o-1)]/13
+  jlyMDT[14,o]<-Tcounterjly[(o-1)]/13
+}
+#*******************************************************************************************************************
+#All of Canada Wholesale: A Ratio of how often we get all of canada direction correct
+#*******************************************************************************************************************
+canobsapr<-as.double(allNallC[8,4])#most recent observation of MOM for allof Canada in april
+canobsmay<-as.double(allNallC[16,4])#most recent observation of MOM for allof Canada in may
+canobsjne<-as.double(allNallC[24,4])
+canobsjly<-as.double(allNallC[32,4])
+cancountapr=0
+cancountmay=0
+cancountjne=0
+cancountjly=0
+for(l in 1:7)
+{
+  if (canobsapr*as.double(allNallC[l,4])>0)
+  {
+    cancountapr=cancountapr+1#counts how often we get direction of MOM Canada correct in apr
+  }
+  if (canobsmay*as.double(allNallC[(l+8),4])>0)
+  {
+    cancountmay=cancountmay+1#counts how often we get direction of MOM Canada correct in may
+  }
+  if (canobsjne*as.double(allNallC[(l+16),4])>0)
+  {
+    cancountjne=cancountjne+1#counts how often we get direction of MOM Canada correct in june
+  }
+  if (canobsjly*as.double(allNallC[(l+24),4])>0)
+  {
+    cancountjly=cancountjly+1#counts how often we get direction of MOM Canada correct in june
+  }
+}
+cancountapr=as.double(cancountapr/7)#produces the ratio
+cancountmay=as.double(cancountmay/7)
+cancountjne=as.double(cancountjne/7)
+cancountjly=as.double(cancountjly/7)
+#********************************************************************************
+#Visualizations:Should Migrate to Shiny App
+#********************************************************************************
+#Provincial Tracking Graph
+#********************************************************************************
+testdata1<-allNdifG[,c(1,5,6)]#creates a table of geo codes,MOM change, and tracking day
+colnames(testdata1)<-c("GC","Value","TrackingDay")#this is used for graphs in tab 3 of shiny app
+testdata1$GC<-as.character(testdata1$GC)
+testdata1$TrackingDay<-as.double(testdata1$TrackingDay)
+testdata1$Value<-as.double(testdata1$Value)
+testdata1apr<-testdata1[1:104,]
+testdata1may<-testdata1[105:208,]#month segmentation
+testdata1jne<-testdata1[209:312,]
+testdata1jly<-testdata1[313:416,]#CHECK BEFORE RUN
+b4=1
+c4=13
+for (a4 in 1:8)#fixes tracking period numbers
+{
+  testdata1may[b4:c4,3]<-a4
+  testdata1jne[b4:c4,3]<-a4
+  testdata1jly[b4:c4,3]<-a4
+  b4=b4+13
+  c4=c4+13
+}
+
+#*********************************************************************************
+#National Tracking Graph
+#*********************************************************************************
+cangraphapr<-allNallC[1:8,4:5]#similar to provinical tracking graph, creates a table read into shiny app with value being the y axis and day being the x
+cangraphmay<-allNallC[9:16,4:5]
+cangraphjne<-allNallC[17:24,4:5]
+cangraphjly<-allNallC[25:32,4:5]
+colnames(cangraphapr)<-c("Value","TDay")
+colnames(cangraphmay)<-c("Value","TDay")
+colnames(cangraphjne)<-c("Value","TDay")
+colnames(cangraphjly)<-c("Value","TDay")
+cangraphmay[1:8,2]<-1:8
+cangraphjne[1:8,2]<-1:8
+cangraphjly[1:8,2]<-1:8
+#**********************************************************************************
+#Button index:
+#**********************************************************************************
+aprbutton<-rep(list(as.data.frame(matrix(0,nrow=8,ncol = 2))),10)#this creates a list of 10 data frames
+maybutton<-rep(list(as.data.frame(matrix(0,nrow=8,ncol = 2))),10)
+jnebutton<-rep(list(as.data.frame(matrix(0,nrow=8,ncol = 2))),10)
+jlybutton<-rep(list(as.data.frame(matrix(0,nrow=8,ncol = 2))),10)
+aprprovbutton<-rep(list(as.data.frame(matrix(0,nrow=7,ncol = 2))),10)#creates same llist except sequence calculates absolute error rather than tracking MOM
+mayprovbutton<-rep(list(as.data.frame(matrix(0,nrow=7,ncol = 2))),10)
+jneprovbutton<-rep(list(as.data.frame(matrix(0,nrow=7,ncol = 2))),10)
+jlyprovbutton<-rep(list(as.data.frame(matrix(0,nrow=7,ncol = 2))),10)
+v=12
+for(s in 1:10)#each data frame are the coordinates for a specific geo's provincial tracking
+{
+  aprbutton[[s]][1:8,1:2]<-testdata1apr[seq(s,length(testdata1apr[,1])-v,13),c(2,3)]
+  maybutton[[s]][1:8,1:2]<-testdata1may[seq(s,length(testdata1may[,1])-v,13),c(2,3)]#sequence reorganizes testdata1apr to stack the same geo code over
+  jnebutton[[s]][1:8,1:2]<-testdata1jne[seq(s,length(testdata1jne[,1])-v,13),c(2,3)]
+  jlybutton[[s]][1:8,1:2]<-testdata1jly[seq(s,length(testdata1jly[,1])-v,13),c(2,3)]
+  aprprovbutton[[s]][1:7,1]<-abs(testdata1apr[seq(s,(length(testdata1apr[,1])-13)-v,13),2]-testdata1apr[s+91,2])
+  aprprovbutton[[s]][1:7,2]<-1:7
+  mayprovbutton[[s]][1:7,1]<-abs(testdata1may[seq(s,(length(testdata1may[,1])-13)-v,13),2]-testdata1may[s+91,2])
+  mayprovbutton[[s]][1:7,2]<-1:7
+  jneprovbutton[[s]][1:7,1]<-abs(testdata1jne[seq(s,(length(testdata1jne[,1])-13)-v,13),2]-testdata1jne[s+91,2])
+  jneprovbutton[[s]][1:7,2]<-1:7
+  jlyprovbutton[[s]][1:7,1]<-abs(testdata1jly[seq(s,(length(testdata1jly[,1])-13)-v,13),2]-testdata1jly[s+91,2])
+  jlyprovbutton[[s]][1:7,2]<-1:7
+  v=v-1#all days in the tracking period rather than stacking same tracking day over all geos
+}
+colnames<-c("Value","TrackingDay")
+aprbutton<-lapply(aprbutton,setNames,colnames)
+maybutton<-lapply(maybutton,setNames,colnames)
+jnebutton<-lapply(jnebutton,setNames,colnames)
+jlybutton<-lapply(jlybutton,setNames,colnames)
+aprprovbutton<-lapply(aprprovbutton,setNames,colnames)
+mayprovbutton<-lapply(mayprovbutton,setNames,colnames)
+jneprovbutton<-lapply(jneprovbutton,setNames,colnames)
+jlyprovbutton<-lapply(jlyprovbutton,setNames,colnames)
+#***********************************************************
+#Max-min index by geo code
+#***********************************************************
+clr<-vector("character",10)
+clr[1]="Green"
+clr[2]="Purple"
+clr[3]="Blue"
+clr[4]="Red"
+clr[5]="Orange"
+clr[6]="Pink"
+clr[7]="Black"
+clr[8]="Yellow"
+clr[9]="Turqoise"
+clr[10]="Magenta"
+aprmm<-as.data.frame(matrix(0,nrow = 10,ncol = 4))#data frames consisting of the maximum and minimum vallues of geo tracked
+aprmm[1:10,1]<-formclmnf[1:10,1]#produces the range and color coordinates with graph in Tab 3
+maymm<-as.data.frame(matrix(0,nrow = 10,ncol = 4))
+maymm[1:10,1]<-formclmnf[1:10,1]
+jnemm<-as.data.frame(matrix(0,nrow = 10,ncol = 4))
+jnemm[1:10,1]<-formclmnf[1:10,1]
+jlymm<-as.data.frame(matrix(0,nrow = 10,ncol = 4))
+jlymm[1:10,1]<-formclmnf[1:10,1]
+for(h in 1:10)
+{
+  aprmm[h,2]<-min(aprbutton[[h]][1:8,1])
+  aprmm[h,3]<-max(aprbutton[[h]][1:8,1])
+  aprmm[h,4]<-abs(aprmm[h,2]-aprmm[h,3])
+  maymm[h,2]<-min(maybutton[[h]][1:8,1])
+  maymm[h,3]<-max(maybutton[[h]][1:8,1])
+  maymm[h,4]<-abs(maymm[h,2]-maymm[h,3])
+  jnemm[h,2]<-min(jnebutton[[h]][1:8,1])
+  jnemm[h,3]<-max(jnebutton[[h]][1:8,1])
+  jnemm[h,4]<-abs(jnemm[h,2]-jnemm[h,3])
+  jlymm[h,2]<-min(jlybutton[[h]][1:8,1])
+  jlymm[h,3]<-max(jlybutton[[h]][1:8,1])
+  jlymm[h,4]<-abs(jlymm[h,2]-jlymm[h,3])
+}
+aprmm<-cbind(clr,aprmm)
+colnames(aprmm)<-c("Colour","GC","Min","Max","Range")
+maymm<-cbind(clr,maymm)
+colnames(maymm)<-c("Colour","GC","Min","Max","Range")
+jnemm<-cbind(clr,jnemm)
+colnames(jnemm)<-c("Colour","GC","Min","Max","Range")
+jlymm<-cbind(clr,jlymm)
+colnames(jlymm)<-c("Colour","GC","Min","Max","Range")
+#***************************************************************************************************************************
+#MONTH SEGMENTATION
+#****************************************************************************************************************
+#Provincial Tracking
+aprpvt<-formclmnf[,1:9]
+maypvt<-formclmnf[,c(1,10:17)]
+colnames(maypvt)<-c("Geography Code",1:8)#segmentating provincial tracking table by month
+junpvt<-formclmnf[,c(1,18:25)]
+colnames(junpvt)<-colnames(maypvt)
+jlypvt<-formclmnf[,c(1,26:33)]
+colnames(jlypvt)<-colnames(maypvt)
+#*******************************************************************************************************************************
+#National Tracking
+aprnat<-allNallC[1:8,]
+maynat<-allNallC[9:16,]
+jnenat<-allNallC[17:24,]
+jlynat<-allNallC[25:32,]
+maynat[,5]<-1:8#segmentating National tracking table by month
+jnenat[,5]<-1:8
+jlynat[,5]<-1:8
+colnames(maynat)<-c("Current Period(202105)","Previous Period(202104)","202104 to 202105 Change","202104 to 202105 %Change","Date")
+colnames(jnenat)<-c("Current Period(202106)","Previous Period(202105)","202105 to 202106 Change","202105 to 202106 %Change","Date")
+colnames(jlynat)<-c("Current Period(202107)","Previous Period(202106)","202106 to 202107 Change","202106 to 202107 %Change","Date")
+#**********************************************************************************************************************************
+#Absolute Error at the National Level(Tab 5):creates monthly arrays to calculate the absolute error corresponding to a specific tracking day compared against the final value of 41 MOM
+#**********************************************************************************************************************************
+abserrorapr<-as.data.frame(matrix(0,nrow = 7,ncol=2))
+colnames(abserrorapr)<-c("Value","TrackingDay")
+abserrorapr[1:7,2]<-1:7
+abserrormay<-as.data.frame(matrix(0,nrow = 7,ncol=2))
+colnames(abserrormay)<-c("Value","TrackingDay")
+abserrormay[1:7,2]<-1:7
+abserrorjne<-as.data.frame(matrix(0,nrow = 7,ncol=2))
+colnames(abserrorjne)<-c("Value","TrackingDay")
+abserrorjne[1:7,2]<-1:7
+abserrorjly<-as.data.frame(matrix(0,nrow = 7,ncol=2))
+colnames(abserrorjly)<-c("Value","TrackingDay")
+abserrorjly[1:7,2]<-1:7
+for (w2 in 1:7)
+{
+  abserrorapr[w2,1]<-abs(canobsapr-cangraphapr[w2,1])
+  abserrormay[w2,1]<-abs(canobsmay-cangraphmay[w2,1])
+  abserrorjne[w2,1]<-abs(canobsjne-cangraphjne[w2,1])
+  abserrorjly[w2,1]<-abs(canobsjly-cangraphjly[w2,1])
+}
+#***************************************************************************************************************************************
+#Absolute Error at the Provincial Level(Tab 6)
+#**************************************************************************************************************************************
+apraemm<-as.data.frame(matrix(0,nrow = 10,ncol = 4))#another set of max-min tables like seen earlier
+apraemm[1:10,1]<-formclmnf[1:10,1]
+mayaemm<-as.data.frame(matrix(0,nrow = 10,ncol = 4))
+mayaemm[1:10,1]<-formclmnf[1:10,1]
+jneaemm<-as.data.frame(matrix(0,nrow = 10,ncol = 4))
+jneaemm[1:10,1]<-formclmnf[1:10,1]
+jlyaemm<-as.data.frame(matrix(0,nrow = 10,ncol = 4))
+jlyaemm[1:10,1]<-formclmnf[1:10,1]
+for(h in 1:10)
+{
+  apraemm[h,2]<-min(aprprovbutton[[h]][1:7,1])
+  apraemm[h,3]<-max(aprprovbutton[[h]][1:7,1])
+  apraemm[h,4]<-abs(apraemm[h,2]-apraemm[h,3])
+  mayaemm[h,2]<-min(mayprovbutton[[h]][1:7,1])
+  mayaemm[h,3]<-max(mayprovbutton[[h]][1:7,1])
+  mayaemm[h,4]<-abs(mayaemm[h,2]-mayaemm[h,3])
+  jneaemm[h,2]<-min(jneprovbutton[[h]][1:7,1])
+  jneaemm[h,3]<-max(jneprovbutton[[h]][1:7,1])
+  jneaemm[h,4]<-abs(jneaemm[h,2]-jneaemm[h,3])
+  jlyaemm[h,2]<-min(jlyprovbutton[[h]][1:7,1])
+  jlyaemm[h,3]<-max(jlyprovbutton[[h]][1:7,1])
+  jlyaemm[h,4]<-abs(jlyaemm[h,2]-jlyaemm[h,3])
+}
+apraemm<-cbind(clr,apraemm)
+colnames(apraemm)<-c("Colour","GC","Min","Max","Range")
+mayaemm<-cbind(clr,mayaemm)
+colnames(mayaemm)<-c("Colour","GC","Min","Max","Range")
+jneaemm<-cbind(clr,jneaemm)
+colnames(jneaemm)<-c("Colour","GC","Min","Max","Range")
+jlyaemm<-cbind(clr,jlyaemm)
+colnames(jlyaemm)<-c("Colour","GC","Min","Max","Range")
+#********************************************************************************************
+#T-F Table:
+#********************************************************************************************
+aprdirgph<-as.data.frame(matrix(0,nrow=7,ncol = 2))#plotting accuracy ratio in tab 7
+maydirgph<-as.data.frame(matrix(0,nrow=7,ncol = 2))
+jnedirgph<-as.data.frame(matrix(0,nrow=7,ncol = 2))
+jlydirgph<-as.data.frame(matrix(0,nrow=7,ncol = 2))
+for(z in 2:8)
+{
+  aprdirgph[(z-1),1]=aprMDT[14,z]
+  maydirgph[(z-1),1]=mayMDT[14,z]
+  jnedirgph[(z-1),1]=jneMDT[14,z]
+  jlydirgph[(z-1),1]=jlyMDT[14,z]
+}
+aprdirgph[1:7,2]=1:7#-forms table similar to other visuals
+maydirgph[1:7,2]=1:7
+jnedirgph[1:7,2]=1:7
+jlydirgph[1:7,2]=1:7
+colnames(aprdirgph)<-colnames
+colnames(maydirgph)<-colnames
+colnames(jnedirgph)<-colnames
+colnames(jlydirgph)<-colnames
+aprdirgph[,1]<-round(as.double(aprdirgph[,1]),digits = 3)
+maydirgph[,1]<-round(as.double(maydirgph[,1]),digits = 3)
+jnedirgph[,1]<-round(as.double(jnedirgph[,1]),digits = 3)
+jlydirgph[,1]<-round(as.double(jlydirgph[,1]),digits = 3)
+```
+
+With the pandemic bringing on the urgent demand for timely, reliable information; a re-visit of the Early Indicator's ability to provide effective information about the Monthly Wholesale Trade Survey was proposed to identify what data is available and accurate at the optimal release date.
+
+This birthed the Early Indicator Experiment(EIE), a project with the intent to track the Macro Growth Analysis(MGA) report used in writing of the Early Indicator and the Daily over a specified period of time each month with the intent of uncovering the following about the data:
+
+**• Are there trends in the movement of wholesale month over month?**
+
+**• How often are we getting the direction of the wholesale month over month value correct?**
+
+**• Is there a clear date of when our data is the most accurate?**
+
+**• What is the time/accuracy trade-off at that point?**
+
+## Process:
+
+How would one go about uncovering this? The idea was to develop an R program and Shiny web app that extracts, transfers and loads daily ISB reports on the month-over-month(MOM)% change and corresponding weighted response rate to develop a tracking period of the aforementioned variables (MOM% change, weighted response rate and tracking date). This tracking period is defined as the interval between the previous month's release of the Daily and the commencement of Run 1 for producing next month's Daily. The program also visualizes a handful of tracking & analysis tables including: provincial MOM, national MOM, national absolute error, provincial absolute error and the relation between directional accuracy and the weighted response rate.
+
+The mechanics of the program began with simple extract, transfer and load processes. This included downloading one Macro Growth Analysis report from SSRS and importing the table into the R program.This is done by setting and searching the working directory with the following commands:
+
+```{r}
+# setwd("H:/Working Files/Projects/The Early Indicator Experiment (EIE) 2021/WH ISB Report Analysis/Cleaned up tables")
+# #Creates master data frame of all reports with index  numbers representing different report dates
+# #************************************************************************************
+# listxlsx<-list.files(pattern="*^[^~]*.xlsx")#creates an array of all report file names
+# folder<-rep(list(data.frame(matrix(0,nrow = 112,ncol = 13))),length(listxlsx))
+# folder=purrr::map_df(1:length(listxlsx),function(i) folder[[i]] %>% mutate(index= i))#adds index number for each daily repor(ie: day 1, 2, 3 etc)
+# q=1
+# w=112 #row length of one MGA report
+# for(k in 1:length(listxlsx))#loops through empty master dataframe and fills each 113 rows with one MGA #report
+# {
+#   folder[q:w,1:13]<-read_excel(listxlsx[k])#spits tables into master dataframe
+#   q=q+112
+#   w=w+112
+# }
+
+```
+
+The first objective was to produce the provincial tracking frame. Identifying each Geo codes' month-over-month value on each tracking day in order to have the frame-work to compare direction statistics and absolute error measurements for all of the Geo codes. The same idea was employed for the national tracking and absolute error measurements.
+
+Once the framework had been laid for 1 Macro Growth Analysis report, it was then time to create tables for each day of the tracking period. This was developed by creating a handful of masterframes with an adjustable row length. The collection of Macro Growth Analysis reports were then organized in a folder and loaded into the program via an array. All reports are stacked on-top of each other and then indexed using a function that creates an additional column with a tracking period(day 1 to 8)
+
+With all reports aggregated into a an aggregated frame, the data could then be subsetted to the master provincial and national tracking tables. The provincial table is a transposed subset of the variable allNdifG that presents the geo codes as the first column followed by their corresponding %MOM values from day 1 of first tracking period to last day of tracking in the final period:
+
+```{r, echo=FALSE}
+ui <- fluidPage(tableOutput("formclmnf"))
+server <- function(input, output) {output$formclmnf<-renderTable(formclmnf)}
+shinyApp(ui = ui, server = server)
+```
+
+The national master table is more straightforward; given the structure of the masterframe,folder, and the fact there is only one national number to track, it was simple to subset the columns Current Period, Previous Period, Total Month Change and Total Month % Change into one frame and apply the indexing function. Rather than using the transposing process enacted upon the provincial frame:
+
+```{r, echo=FALSE}
+ui <- fluidPage(tags$p("NAICS Code: 000000"),actionButton("apr2","April"),actionButton("may2","May"),actionButton("jne2","June"),actionButton("jly2","July"),tableOutput("allNallC"))
+server <- function(input, output) {
+    output$allNallC<-renderTable(aprnat)
+    rvnat<-reactiveValues(nat=aprnat)
+    observeEvent(input$apr2,{nat=aprnat
+    output$allNallC<-renderTable(nat)
+    })
+    observeEvent(input$may2,{nat=maynat
+    output$allNallC<-renderTable(nat)
+    })
+    observeEvent(input$jne2,{nat=jnenat
+    output$allNallC<-renderTable(nat)
+    })
+    observeEvent(input$jly2,{nat=jlynat
+    output$allNallC<-renderTable(nat)
+    })
+}
+
+shinyApp(ui = ui, server = server)
+```
+
+The next step was to design the master weighted response rate frame. This process mirrored much of the master-frae of MGA reports from earlier in the program except for switching the working directory and a much more hard-coded frame filling loop. Given the weighted response rate report's dimensions and need for only one cell in the original frame, the creation of the pseudo-sets was the more tedious of exercises in this area of the project.
+
+This was followed by the direction statistics calculator which essentially creates a 14 x 8 frame similar to the provincial tracking table in respects to the first column representing the geo codes. What differentiates the two is the boolean aspect of the direction table as seen below:
+
+```{r, echo=FALSE}
+ui <- fluidPage(
+tabPanel("Directionality Statistics",actionButton("apr8","April"),actionButton("may8","May"),actionButton("jne8","June"),actionButton("jly8","July"),
+             fluidRow(tableOutput("TFtable")))#end of panel
+)
+server <- function(input, output) {
+    output$TFtable<-renderTable(aprMDT)
+    observeEvent(input$apr8,{output$TFtable<-renderTable(aprMDT)})
+    observeEvent(input$may8,{output$TFtable<-renderTable(mayMDT)})
+    observeEvent(input$jne8,{output$TFtable<-renderTable(jneMDT)})
+    observeEvent(input$jly8,{output$TFtable<-renderTable(jlyMDT)})
+}
+shinyApp(ui = ui, server = server)
+```
+
+The frame compares the sign of each provinces' MOM value on the final day of the tracking period and marks the corresponding cell with a "T" or "F" depending on if the signs match. The 14th row then sums the T's in its column and divides them by the # of provinces and territories, 13. This creates the directional-accuracy ratio plotted out in tab 7 of the corresponding web app:
+
+```{r echo=FALSE}
+ui <- fluidPage(
+    tabPanel("Directionality Statistics",actionButton("apr8","April"),actionButton("may8","May"),actionButton("jne8","June"),actionButton("jly8","July"),
+             fluidRow(splitLayout(cellWidths=c("47%","53%"),tableOutput("TFtable"),plotOutput("TFgraph")))
+             
+    )#end of panel
+)
+server <- function(input, output) {
+    output$TFtable<-renderTable(aprMDT)
+    observeEvent(input$apr8,{output$TFtable<-renderTable(aprMDT)})
+    observeEvent(input$may8,{output$TFtable<-renderTable(mayMDT)})
+    observeEvent(input$jne8,{output$TFtable<-renderTable(jneMDT)})
+    observeEvent(input$jly8,{output$TFtable<-renderTable(jlyMDT)})
+    TF<-ggplot(aprdirgph,aes(TrackingDay,Value))+labs(title = "Direction Accuracy over Tracking Period")+scale_x_continuous(breaks = seq(min(aprdirgph$TrackingDay),max(aprdirgph$TrackingDay)))
+    TF<-TF+geom_path(data=aprdirgph,size=2,col="navy")
+    TF<-TF+geom_path(data=aprwrr,size=2,col="red")
+    output$TFgraph<-renderPlot(TF)
+    observeEvent(input$apr8,{
+        TF<-ggplot(aprdirgph,aes(TrackingDay,Value))+labs(title = "Direction Accuracy over Tracking Period")+scale_x_continuous(breaks = seq(min(aprdirgph$TrackingDay),max(aprdirgph$TrackingDay)))
+        TF<-TF+geom_path(data=aprdirgph,size=2,col="navy")
+        TF<-TF+geom_path(data=aprwrr,size=2,col="red")
+        output$TFgraph<-renderPlot(TF)
+    }
+    )
+    observeEvent(input$may8,{
+        TF<-ggplot(maydirgph,aes(TrackingDay,Value))+labs(title = "Direction Accuracy over Tracking Period")+scale_x_continuous(breaks = seq(min(maydirgph$TrackingDay),max(maydirgph$TrackingDay)))
+        TF<-TF+geom_path(data=maydirgph,size=2,col="navy")
+        TF<-TF+geom_path(data=maywrr,size=2,col="red")
+        output$TFgraph<-renderPlot(TF)
+    })
+    observeEvent(input$jne8,{
+        TF<-ggplot(jnedirgph,aes(TrackingDay,Value))+labs(title = "Direction Accuracy over Tracking Period")+scale_x_continuous(breaks = seq(min(jnedirgph$TrackingDay),max(jnedirgph$TrackingDay)))
+        TF<-TF+geom_path(data=jnedirgph,size=2,col="navy")
+        TF<-TF+geom_path(data=jnewrr,size=2,col="red")
+        output$TFgraph<-renderPlot(TF)
+    })
+    observeEvent(input$jly8,{
+        TF<-ggplot(jlydirgph,aes(TrackingDay,Value))+labs(title = "Direction Accuracy over Tracking Period")+scale_x_continuous(breaks = seq(min(jlydirgph$TrackingDay),max(jlydirgph$TrackingDay)))
+        TF<-TF+geom_path(data=jlydirgph,size=2,col="navy")
+        TF<-TF+geom_path(data=jlywrr,size=2,col="red")
+        output$TFgraph<-renderPlot(TF)
+    })
+}
+shinyApp(ui = ui, server = server)
+```
+
+What this aims to uncover is which day of the tracking period produces the highest rate of direction predictability. This is one of the most significant aspects of the study because the number one priority of the Early Indicator is to capture the overall sway of the wholesale sector. Quantitative change is supplementary to whether it is going to be a good or bad month for the sector.
+
+This analysis was also performed at the national level with the cancount variables. The schema of this section mirrors its provincial counterpart:
+
+```{r}
+# canobsapr<-as.double(allNallC[8,4])#most recent observation of MOM for allof Canada in april
+# canobsmay<-as.double(allNallC[16,4])#most recent observation of MOM for allof Canada in may
+# canobsjne<-as.double(allNallC[24,4])
+# canobsjly<-as.double(allNallC[32,4])
+# cancountapr=0
+# cancountmay=0
+# cancountjne=0
+# cancountjly=0
+# for(l in 1:7)
+# {
+#   if (canobsapr*as.double(allNallC[l,4])>0)
+#   {
+#     cancountapr=cancountapr+1#counts how often we get direction of MOM Canada correct in apr
+#   }
+#   if (canobsmay*as.double(allNallC[(l+8),4])>0)
+#   {
+#     cancountmay=cancountmay+1#counts how often we get direction of MOM Canada correct in may
+#   }
+#   if (canobsjne*as.double(allNallC[(l+16),4])>0)
+#   {
+#     cancountjne=cancountjne+1#counts how often we get direction of MOM Canada correct in june
+#   }
+#   if (canobsjly*as.double(allNallC[(l+24),4])>0)
+#   {
+#     cancountjly=cancountjly+1#counts how often we get direction of MOM Canada correct in june
+#   }
+# }
+# cancountapr=as.double(cancountapr/7)#produces the ratio
+# cancountmay=as.double(cancountmay/7)
+# cancountjne=as.double(cancountjne/7)
+# cancountjly=as.double(cancountjly/7)
+```
+
+The second half of the program designs the output tables needed for the interactive graphs presented in the shiny app. This section kicks off with reformatting the main provincial tracking variable, allNdifG, into a frame with the Tracking Day variable on the horizontal axis, MOM value on the y axis and the geo codes as a tertiary element of the graph serving the function of isolating specific provinces/territories for deeper analysis:
+
+```{r, echo=FALSE}
+testdata1[1:26,]
+```
+
+```{r, echo=FALSE}
+ui <- fluidPage(
+    tabPanel("A Visual(Provinces)",actionButton("apr4","April"),actionButton("may4","May"),actionButton("jne4","June"),actionButton("jly4","July"),
+             fluidRow(checkboxGroupInput("prvslct",label="Choose Province(s)",selected=formclmnf[1:10,1],inline=TRUE,
+                                         choices=formclmnf[1:10,1]),splitLayout(cellWidths=c("73%","27%"),plotOutput("tst",width=1000,height = 450),tableOutput("mm")))),
+   
+)
+server <- function(input, output) {
+    clrs<-c("green","purple","blue","red","orange","pink","black","yellow","turquoise3","magenta")#creates array of color options to be looped through
+    #Max-Min Tables and Province Tracking graph
+    output$tst<-renderPlot({
+        tstplot<-ggplot(NULL,aes(TrackingDay,Value))
+        for(c in 1:10)
+        {
+            if(formclmnf[c,1]%in% input$prvslct)
+            {
+                tstplot<-tstplot+geom_path(data=aprbutton[[c]],size=1,col=clrs[c])
+                tstplot<-tstplot+scale_y_continuous(breaks =seq(-20,20,2)) #seq(min(aprbutton[[c]][,1]),max(aprbutton[[c]][,1]),2))
+            }
+        }
+        output$mm<-renderTable(aprmm)
+        tstplot<-tstplot+labs(title = "Provincial Changes Over Tracking Period")+scale_x_continuous(breaks = seq(min(testdata1$TrackingDay),max(testdata1$TrackingDay),2))
+        tstplot
+       
+    })
+    observeEvent(input$apr4,
+                 {output$tst<-renderPlot(
+                     {
+                         tstplot2<-ggplot(NULL,aes(TrackingDay,Value))
+                         for(c in 1:10)
+                         {
+                             if(formclmnf[c,1]%in% input$prvslct)
+                             {
+                                 tstplot2<-tstplot2+geom_path(data=aprbutton[[c]],size=1,col=clrs[c])
+                                 tstplot2<-tstplot2+scale_y_continuous(breaks =seq(-20,20,2))
+                             }
+                         }
+                         output$mm<-renderTable(aprmm)
+                         tstplot2<-tstplot2+labs(title = "Provincial Changes Over Tracking Period")+scale_x_continuous(breaks = seq(min(testdata1$TrackingDay),max(testdata1$TrackingDay),2))
+                         tstplot2
+                         
+                     }
+                 )
+                 }
+    )
+   
+    observeEvent(input$may4,{
+        output$tst<-renderPlot({
+            tstplot3<-ggplot(NULL,aes(TrackingDay,Value))
+            for(c in 1:10)
+            {
+                if(formclmnf[c,1]%in% input$prvslct)
+                {
+                    tstplot3<-tstplot3+geom_path(data=maybutton[[c]],size=1,col=clrs[c])
+                    tstplot3<-tstplot3+scale_y_continuous(breaks =seq(-20,20,2))
+                }
+            }
+            output$mm<-renderTable(maymm)
+            tstplot3<-tstplot3+labs(title = "Provincial Changes Over Tracking Period")+scale_x_continuous(breaks = seq(min(testdata1$TrackingDay),max(testdata1$TrackingDay),2))
+            tstplot3
+           
+        }
+        )
+    }
+    )
+    observeEvent(input$jne4,{
+        output$tst<-renderPlot({
+            tstplot4<-ggplot(NULL,aes(TrackingDay,Value))
+            for(c in 1:10)
+            {
+                if(formclmnf[c,1]%in% input$prvslct)
+                {
+                    tstplot4<-tstplot4+geom_path(data=jnebutton[[c]],size=1,col=clrs[c])
+                    tstplot4<-tstplot4+scale_y_continuous(breaks =seq(-20,20,2))
+                }
+            }
+            output$mm<-renderTable(jnemm)
+            tstplot4<-tstplot4+labs(title = "Provincial Changes Over Tracking Period")+scale_x_continuous(breaks = seq(min(testdata1$TrackingDay),max(testdata1$TrackingDay),2))
+            tstplot4
+           
+        }
+        )
+    }
+    )
+    observeEvent(input$jly4,{
+        output$tst<-renderPlot({
+            tstplot5<-ggplot(NULL,aes(TrackingDay,Value))
+            for(c in 1:10)
+            {
+                if(formclmnf[c,1]%in% input$prvslct)
+                {
+                    tstplot5<-tstplot5+geom_path(data=jlybutton[[c]],size=1,col=clrs[c])
+                    tstplot5<-tstplot5+scale_y_continuous(breaks =seq(-20,20,2))
+                }
+            }
+            output$mm<-renderTable(jlymm)
+            tstplot5<-tstplot5+labs(title = "Provincial Changes Over Tracking Period")+scale_x_continuous(breaks = seq(min(testdata1$TrackingDay),max(testdata1$TrackingDay),2))
+            tstplot5
+           
+        }
+        )
+    }
+    )
+}
+shinyApp(ui = ui, server = server)
+```
+
+This is followed by the national tracking graph which mirrors the frame-work of its provincial counterpart:
+
+```{r, echo=FALSE}
+cangraphapr
+```
+
+```{r,echo=FALSE}
+ui <- fluidPage(
+tabPanel("A Visual(Canada)",actionButton("apr5","April"),actionButton("may5","May"),actionButton("jne5","June"),actionButton("jly5","July"),plotOutput("canada",width=500,height = 500,click = "pplot_click")),
+)
+server <- function(input, output) {
+    canplot<-ggplot(cangraphapr,aes(TDay,Value))+labs(title = "WholeSale MOM at the 3 Digit Level over Tracking Period")+scale_x_continuous(breaks = seq(min(cangraphapr$TDay),max(cangraphapr$TDay),2))
+    canplot<-canplot+geom_path(col="firebrick",size=2)
+    canplot<-canplot+theme_bw()+coord_cartesian(xlim=c(min(cangraphapr$TDay),max(cangraphapr$TDay)))
+    canplot<-canplot+scale_y_continuous(breaks = seq(-2,4,0.25))
+    output$canada<-renderPlot({canplot})
+    observeEvent(input$apr5,{
+        canplot<-ggplot(cangraphapr,aes(TDay,Value))+labs(title = "WholeSale MOM at the 3 Digit Level over Tracking Period")+scale_x_continuous(breaks = seq(min(cangraphapr$TDay),max(cangraphapr$TDay),2))
+        canplot<-canplot+geom_path(col="firebrick",size=2)
+        canplot<-canplot+theme_bw()+coord_cartesian(xlim=c(min(cangraphapr$TDay),max(cangraphapr$TDay)))
+        canplot<-canplot+scale_y_continuous(breaks = seq(-2,4,0.25))
+        output$canada<-renderPlot({canplot})
+    })
+    observeEvent(input$may5,{
+        canplot<-ggplot(cangraphmay,aes(TDay,Value))+labs(title = "WholeSale MOM at the 3 Digit Level over Tracking Period")+scale_x_continuous(breaks = seq(min(cangraphmay$TDay),max(cangraphmay$TDay),2))
+        canplot<-canplot+geom_path(col="firebrick",size=2)
+        canplot<-canplot+theme_bw()+coord_cartesian(xlim=c(min(cangraphmay$TDay),max(cangraphmay$TDay)))
+        canplot<-canplot+scale_y_continuous(breaks = seq(-2,4,0.25))
+        output$canada<-renderPlot({canplot})
+    })
+    observeEvent(input$jne5,{
+        canplot<-ggplot(cangraphjne,aes(TDay,Value))+labs(title = "WholeSale MOM at the 3 Digit Level over Tracking Period")+scale_x_continuous(breaks = seq(min(cangraphjne$TDay),max(cangraphjne$TDay),2))
+        canplot<-canplot+geom_path(col="firebrick",size=2)
+        canplot<-canplot+theme_bw()+coord_cartesian(xlim=c(min(cangraphjne$TDay),max(cangraphjne$TDay)))
+        canplot<-canplot+scale_y_continuous(breaks = seq(-2,4,0.25))
+        output$canada<-renderPlot({canplot})
+    })
+    observeEvent(input$jly5,{
+        canplot<-ggplot(cangraphjly,aes(TDay,Value))+labs(title = "WholeSale MOM at the 3 Digit Level over Tracking Period")+scale_x_continuous(breaks = seq(min(cangraphjly$TDay),max(cangraphjly$TDay),2))
+        canplot<-canplot+geom_path(col="firebrick",size=2)
+        canplot<-canplot+theme_bw()+coord_cartesian(xlim=c(min(cangraphjly$TDay),max(cangraphjly$TDay)))
+        canplot<-canplot+scale_y_continuous(breaks = seq(-2,4,0.25))
+        output$canada<-renderPlot({canplot})
+    })
+}
+shinyApp(ui = ui, server = server)
+```
+## Optimizing the Product:
+
+Given the need for modularity within the R program, the next section designs coherent databases to optimize the interactivity of the provincial visualizations of the web app:
+
+```{r}
+# clrs<-c("green","purple","blue","red","orange","pink","black","yellow","turquoise3","magenta")#creates array of color options to be looped through
+# #Max-Min Tables and Province Tracking graph
+# output$tst<-renderPlot({
+#   tstplot<-ggplot(NULL,aes(TrackingDay,Value))
+#   for(c in 1:10)
+#   {
+#   if(formclmnf[c,1]%in% input$prvslct)
+#   {
+#     tstplot<-tstplot+geom_path(data=aprbutton[[c]],size=1,col=clrs[c])
+#     tstplot<-tstplot+scale_y_continuous(breaks =seq(-20,20,2)) #seq(min(aprbutton[[c]][,1]),max(aprbutton[[c]][,1]),2))
+#   }
+#   }
+#   output$mm<-renderTable(aprmm)
+#   tstplot<-tstplot+labs(title = "Provincial Changes Over Tracking Period")+scale_x_continuous(breaks = seq(min(testdata1$TrackingDay),max(testdata1$TrackingDay),2))
+#   tstplot
+#  
+# })
+# observeEvent(input$apr4,
+#                {output$tst<-renderPlot(
+#                  {
+#                  tstplot2<-ggplot(NULL,aes(TrackingDay,Value))
+#                  for(c in 1:10)
+#                  {
+#                    if(formclmnf[c,1]%in% input$prvslct)
+#                    {
+#                      tstplot2<-tstplot2+geom_path(data=aprbutton[[c]],size=1,col=clrs[c])
+#                      tstplot2<-tstplot2+scale_y_continuous(breaks =seq(-20,20,2))
+#                    }
+#                  }
+#                  output$mm<-renderTable(aprmm)
+#                  tstplot2<-tstplot2+labs(title = "Provincial Changes Over Tracking Period")+scale_x_continuous(breaks = seq(min(testdata1$TrackingDay),max(testdata1$TrackingDay),2))
+#                  tstplot2
+#                  
+#                  }
+#                  )
+#                }
+#              )
+#
+# observeEvent(input$may4,{ <-
+#   output$tst<-renderPlot({<-
+#     tstplot3<-ggplot(NULL,aes(TrackingDay,Value))<-this loops through the line index of maybutton[[]]
+#     for(c in 1:10)<-producing a plot with a line dedicated to each province
+#     {
+#       if(formclmnf[c,1]%in% input$prvslct)
+#       {
+#         tstplot3<-tstplot3+geom_path(data=maybutton[[c]],size=1,col=clrs[c])#originally,
+#         tstplot3<-tstplot3+scale_y_continuous(breaks =seq(-20,20,2))
+#       }
+#     }
+#     output$mm<-renderTable(maymm)
+#     tstplot3<-tstplot3+labs(title = "Provincial Changes Over Tracking Period")+scale_x_continuous(breaks = seq(min(testdata1$TrackingDay),max(testdata1$TrackingDay),2))
+#     tstplot3
+#    
+#   }
+#   )
+# }
+# )
+# observeEvent(input$jne4,{
+#   output$tst<-renderPlot({
+#     tstplot4<-ggplot(NULL,aes(TrackingDay,Value))
+#     for(c in 1:10)
+#     {
+#       if(formclmnf[c,1]%in% input$prvslct)
+#       {
+#         tstplot4<-tstplot4+geom_path(data=jnebutton[[c]],size=1,col=clrs[c])
+#         tstplot4<-tstplot4+scale_y_continuous(breaks =seq(-20,20,2))
+#       }
+#     }
+#     output$mm<-renderTable(jnemm)
+#     tstplot4<-tstplot4+labs(title = "Provincial Changes Over Tracking Period")+scale_x_continuous(breaks = seq(min(testdata1$TrackingDay),max(testdata1$TrackingDay),2))
+#     tstplot4
+#    
+#   }
+#   )
+# }
+# )
+# observeEvent(input$jly4,{
+#   output$tst<-renderPlot({
+#     tstplot5<-ggplot(NULL,aes(TrackingDay,Value))
+#     for(c in 1:10)
+#     {
+#       if(formclmnf[c,1]%in% input$prvslct)
+#       {
+#         tstplot5<-tstplot5+geom_path(data=jlybutton[[c]],size=1,col=clrs[c])
+#         tstplot5<-tstplot5+scale_y_continuous(breaks =seq(-20,20,2))
+#       }
+#     }
+#     output$mm<-renderTable(jlymm)
+#     tstplot5<-tstplot5+labs(title = "Provincial Changes Over Tracking Period")+scale_x_continuous(breaks = seq(min(testdata1$TrackingDay),max(testdata1$TrackingDay),2))
+#     tstplot5
+#    
+#   }
+#   )
+# }
+# )
+```
+
+The objects, apr/may/jne/jlybutton, bundle a list of 10 dataframes(one per province(Geo code 10-59)) that consist of the output values mentioned previously for the interactive provincial tracking graph. When a particular month button is pressed, a new plot is created with the Geo buttons standard for provincial analysis. It then loops through the line index of the button's database, producing a line graph for each province. This section originally started out as 10 different loops per month button, an astronomically computationally expensive segment of code. With the development of my programming skills has come the ability to program and popularize effectively, creating neat and quicker programs.
+
+```{r}
+# aprbutton<-rep(list(as.data.frame(matrix(0,nrow=8,ncol = 2))),10)#this creates a list of 10 data frames
+# maybutton<-rep(list(as.data.frame(matrix(0,nrow=8,ncol = 2))),10)
+# jnebutton<-rep(list(as.data.frame(matrix(0,nrow=8,ncol = 2))),10)
+# jlybutton<-rep(list(as.data.frame(matrix(0,nrow=8,ncol = 2))),10)
+# aprprovbutton<-rep(list(as.data.frame(matrix(0,nrow=7,ncol = 2))),10)#creates same llist except sequence calculates absolute error rather than tracking MOM
+# mayprovbutton<-rep(list(as.data.frame(matrix(0,nrow=7,ncol = 2))),10)
+# jneprovbutton<-rep(list(as.data.frame(matrix(0,nrow=7,ncol = 2))),10)
+# jlyprovbutton<-rep(list(as.data.frame(matrix(0,nrow=7,ncol = 2))),10)
+# v=12
+# for(s in 1:10)#each data frame are the coordinates for a specific geo's provincial tracking
+# {
+#   aprbutton[[s]][1:8,1:2]<-testdata1apr[seq(s,length(testdata1apr[,1])-v,13),c(2,3)]
+#   maybutton[[s]][1:8,1:2]<-testdata1may[seq(s,length(testdata1may[,1])-v,13),c(2,3)]#sequence reorganizes testdata1apr to stack the same geo code over
+#   jnebutton[[s]][1:8,1:2]<-testdata1jne[seq(s,length(testdata1jne[,1])-v,13),c(2,3)]
+#   jlybutton[[s]][1:8,1:2]<-testdata1jly[seq(s,length(testdata1jly[,1])-v,13),c(2,3)]
+#   aprprovbutton[[s]][1:7,1]<-abs(testdata1apr[seq(s,(length(testdata1apr[,1])-13)-v,13),2]-testdata1apr[s+91,2])
+#   aprprovbutton[[s]][1:7,2]<-1:7
+#   mayprovbutton[[s]][1:7,1]<-abs(testdata1may[seq(s,(length(testdata1may[,1])-13)-v,13),2]-testdata1may[s+91,2])
+#   mayprovbutton[[s]][1:7,2]<-1:7
+#   jneprovbutton[[s]][1:7,1]<-abs(testdata1jne[seq(s,(length(testdata1jne[,1])-13)-v,13),2]-testdata1jne[s+91,2])
+#   jneprovbutton[[s]][1:7,2]<-1:7
+#   jlyprovbutton[[s]][1:7,1]<-abs(testdata1jly[seq(s,(length(testdata1jly[,1])-13)-v,13),2]-testdata1jly[s+91,2])
+#   jlyprovbutton[[s]][1:7,2]<-1:7
+#   v=v-1#all days in the tracking period rather than stacking same tracking day over all geos
+# }
+# colnames<-c("Value","TrackingDay")
+# aprbutton<-lapply(aprbutton,setNames,colnames)
+# maybutton<-lapply(maybutton,setNames,colnames)
+# jnebutton<-lapply(jnebutton,setNames,colnames)
+# jlybutton<-lapply(jlybutton,setNames,colnames)
+# aprprovbutton<-lapply(aprprovbutton,setNames,colnames)
+# mayprovbutton<-lapply(mayprovbutton,setNames,colnames)
+# jneprovbutton<-lapply(jneprovbutton,setNames,colnames)
+# jlyprovbutton<-lapply(jlyprovbutton,setNames,colnames)
+```
+
+Here, the variable name apr/may/jne/jlyprovbutton is deceiving as this is the same size of the object seen above except the frames consist of the **monthly absolute error measurements** seen in the web app's tab on the provincial optimal date:
+
+```{r,echo=FALSE}
+ui <- fluidPage(
+    tabPanel("The Optimal Date(By Province)",actionButton("apr7","April"),actionButton("may7","May"),actionButton("jne7","June"),actionButton("jly7","July"),
+             fluidRow(checkboxGroupInput("prvslct2",label="Choose Province(s)",selected=formclmnf[1:10,1],inline=TRUE,choices=formclmnf[1:10,1]),
+                      splitLayout(cellWidths=c("53%","47%"),plotOutput("proverror",width=1000,height = 450),tableOutput("aemm")),
+                      plotOutput("error10"),plotOutput("error11"),plotOutput("error12"),
+                      plotOutput("error13"),plotOutput("quebec"),plotOutput("error35"),plotOutput("error46"),plotOutput("error47")
+                      ,plotOutput("error48"),plotOutput("error59"))),
+    )
+server <- function(input, output) {
+    clrs<-c("green","purple","blue","red","orange","pink","black","yellow","turquoise3","magenta")
+    output$proverror<-renderPlot({
+        proverror<-ggplot(NULL,aes(TrackingDay,Value))
+        for(c in 1:10)
+        {
+            if(formclmnf[c,1]%in% input$prvslct2)
+            {
+                proverror<-proverror+geom_path(data=aprprovbutton[[c]],size=1,col=clrs[c],fill=clrs[c])
+                proverror<-proverror+scale_y_continuous(breaks =seq(0,20,1))
+            }
+        }
+        output$aemm<-renderTable(apraemm)
+        proverror<-proverror+labs(title = "Residual Error Measurements Over Tracking Period(By Province)")+scale_x_continuous(breaks = seq(min(aprprovbutton[[c]]$TrackingDay),max(aprprovbutton[[c]]$TrackingDay),2))
+        proverror
+       
+    })
+    observeEvent(input$apr7, {
+        output$proverror<-renderPlot({
+            proverror<-ggplot(NULL,aes(TrackingDay,Value))
+            for(c in 1:10)
+            {
+                if(formclmnf[c,1]%in% input$prvslct2)
+                {
+                    proverror<-proverror+geom_path(data=aprprovbutton[[c]],size=1,col=clrs[c],fill=clrs[c])
+                    proverror<-proverror+scale_y_continuous(breaks =seq(0,20,1))
+                }
+            }
+            output$aemm<-renderTable(apraemm)
+            proverror<-proverror+labs(title = "Residual Error Measurements Over Tracking Period(By Province)")+scale_x_continuous(breaks = seq(min(aprprovbutton[[c]]$TrackingDay),max(aprprovbutton[[c]]$TrackingDay),2))
+            proverror
+           
+        })
+       
+       
+    })
+    observeEvent(input$may7, {
+        output$proverror<-renderPlot({
+            proverror<-ggplot(NULL,aes(TrackingDay,Value))
+            for(c in 1:10)
+            {
+                if(formclmnf[c,1]%in% input$prvslct2)
+                {
+                    proverror<-proverror+geom_path(data=mayprovbutton[[c]],size=1,col=clrs[c],fill=clrs[c])
+                    proverror<-proverror+scale_y_continuous(breaks =seq(0,20,1))
+                }
+            }
+            output$aemm<-renderTable(mayaemm)
+            proverror<-proverror+labs(title = "Residual Error Measurements Over Tracking Period(By Province)")+scale_x_continuous(breaks = seq(min(mayprovbutton[[c]]$TrackingDay),max(mayprovbutton[[c]]$TrackingDay),2))
+            proverror
+           
+        })
+    })
+    observeEvent(input$jne7, {
+        output$proverror<-renderPlot({
+            proverror<-ggplot(NULL,aes(TrackingDay,Value))
+            for(c in 1:10)
+            {
+                if(formclmnf[c,1]%in% input$prvslct2)
+                {
+                    proverror<-proverror+geom_path(data=jneprovbutton[[c]],size=1,col=clrs[c],fill=clrs[c])
+                    proverror<-proverror+scale_y_continuous(breaks =seq(0,20,1))
+                }
+            }
+            output$aemm<-renderTable(jneaemm)
+            proverror<-proverror+labs(title = "Residual Error Measurements Over Tracking Period(By Province)")+scale_x_continuous(breaks = seq(min(jneprovbutton[[c]]$TrackingDay),max(jneprovbutton[[c]]$TrackingDay),2))
+            proverror
+           
+        })
+    })
+    observeEvent(input$jly7, {
+        output$proverror<-renderPlot({
+            proverror<-ggplot(NULL,aes(TrackingDay,Value))
+            for(c in 1:10)
+            {
+                if(formclmnf[c,1]%in% input$prvslct2)
+                {
+                    proverror<-proverror+geom_path(data=jlyprovbutton[[c]],size=1,col=clrs[c],fill=clrs[c])
+                    proverror<-proverror+scale_y_continuous(breaks =seq(0,20,1))
+                }
+            }
+            output$aemm<-renderTable(jlyaemm)
+            proverror<-proverror+labs(title = "Residual Error Measurements Over Tracking Period(By Province)")+scale_x_continuous(breaks = seq(min(jlyprovbutton[[c]]$TrackingDay),max(jlyprovbutton[[c]]$TrackingDay),2))
+            proverror
+           
+        })
+    })
+    #Nfl & Lab
+    output$error10<-renderPlot({
+        error10<-ggplot(NULL,aes(TrackingDay,Value))
+        error10<-error10+geom_col(data=aprprovbutton[[1]],size=1,col=clrs[1],fill=clrs[1])
+        error10<-error10+scale_y_continuous(breaks =seq(0,20,1))+labs(title = "Residual Error Measurements Over Tracking Period(NewFoundland and Labrador)")
+        error10<-error10+scale_x_continuous(breaks = seq(min(aprprovbutton[[1]]$TrackingDay),max(aprprovbutton[[1]]$TrackingDay),1))
+        error10
+    })
+    observeEvent(input$apr7,{
+        output$error10<-renderPlot({
+            error10<-ggplot(NULL,aes(TrackingDay,Value))
+            error10<-error10+geom_col(data=aprprovbutton[[1]],size=1,col=clrs[1],fill=clrs[1])
+            error10<-error10+scale_y_continuous(breaks =seq(0,20,1))+labs(title = "Residual Error Measurements Over Tracking Period(NewFoundland and Labrador)")
+            error10<-error10+scale_x_continuous(breaks = seq(min(aprprovbutton[[1]]$TrackingDay),max(aprprovbutton[[1]]$TrackingDay),1))
+            error10
+        })
+    })
+    observeEvent(input$may7, {
+        output$error10<-renderPlot({
+            error10<-ggplot(NULL,aes(TrackingDay,Value))
+            error10<-error10+geom_col(data=mayprovbutton[[1]],size=1,col=clrs[1],fill=clrs[1])
+            error10<-error10+scale_y_continuous(breaks =seq(0,20,1))+labs(title = "Residual Error Measurements Over Tracking Period(NewFoundland and Labrador)")
+            error10<-error10+scale_x_continuous(breaks = seq(min(mayprovbutton[[1]]$TrackingDay),max(mayprovbutton[[1]]$TrackingDay),1))
+            error10
+        })
+    })
+    observeEvent(input$jne7, {
+        output$error10<-renderPlot({
+            error10<-ggplot(NULL,aes(TrackingDay,Value))
+            error10<-error10+geom_col(data=jneprovbutton[[1]],size=1,col=clrs[1],fill=clrs[1])
+            error10<-error10+scale_y_continuous(breaks =seq(0,20,1))+labs(title = "Residual Error Measurements Over Tracking Period(NewFoundland and Labrador)")
+            error10<-error10+scale_x_continuous(breaks = seq(min(jneprovbutton[[1]]$TrackingDay),max(jneprovbutton[[1]]$TrackingDay),1))
+            error10
+        })
+    })
+    observeEvent(input$jly7, {
+        output$error10<-renderPlot({
+            error10<-ggplot(NULL,aes(TrackingDay,Value))
+            error10<-error10+geom_col(data=jlyprovbutton[[1]],size=1,col=clrs[1],fill=clrs[1])
+            error10<-error10+scale_y_continuous(breaks =seq(0,20,1))+labs(title = "Residual Error Measurements Over Tracking Period(NewFoundland and Labrador)")
+            error10<-error10+scale_x_continuous(breaks = seq(min(jlyprovbutton[[1]]$TrackingDay),max(jlyprovbutton[[1]]$TrackingDay),1))
+            error10
+        })
+    })
+    #PEI
+    output$error11<-renderPlot({
+        error11<-ggplot(NULL,aes(TrackingDay,Value))
+        error11<-error11+geom_col(data=aprprovbutton[[2]],size=1,col=clrs[2],fill=clrs[2])
+        error11<-error11+scale_y_continuous(breaks =seq(0,20,1))+labs(title = "Residual Error Measurements Over Tracking Period(PEI)")
+        error11<-error11+scale_x_continuous(breaks = seq(min(aprprovbutton[[2]]$TrackingDay),max(aprprovbutton[[2]]$TrackingDay),1))
+        error11
+    })
+    observeEvent(input$apr7,{
+        output$error11<-renderPlot({
+            error11<-ggplot(NULL,aes(TrackingDay,Value))
+            error11<-error11+geom_col(data=aprprovbutton[[2]],size=1,col=clrs[2],fill=clrs[2])
+            error11<-error11+scale_y_continuous(breaks =seq(0,20,1))+labs(title = "Residual Error Measurements Over Tracking Period(PEI)")
+            error11<-error11+scale_x_continuous(breaks = seq(min(aprprovbutton[[2]]$TrackingDay),max(aprprovbutton[[2]]$TrackingDay),1))
+            error11
+        })
+    })
+    observeEvent(input$may7, {
+        output$error11<-renderPlot({
+            error11<-ggplot(NULL,aes(TrackingDay,Value))
+            error11<-error11+geom_col(data=mayprovbutton[[2]],size=1,col=clrs[2],fill=clrs[2])
+            error11<-error11+scale_y_continuous(breaks =seq(0,20,1))+labs(title = "Residual Error Measurements Over Tracking Period(PEI)")
+            error11<-error11+scale_x_continuous(breaks = seq(min(mayprovbutton[[2]]$TrackingDay),max(mayprovbutton[[2]]$TrackingDay),1))
+            error11
+        })
+       
+    })
+    observeEvent(input$jne7, {
+        output$error11<-renderPlot({
+            error11<-ggplot(NULL,aes(TrackingDay,Value))
+            error11<-error11+geom_col(data=jneprovbutton[[2]],size=1,col=clrs[2],fill=clrs[2])
+            error11<-error11+scale_y_continuous(breaks =seq(0,20,1))+labs(title = "Residual Error Measurements Over Tracking Period(PEI)")
+            error11<-error11+scale_x_continuous(breaks = seq(min(jneprovbutton[[2]]$TrackingDay),max(jneprovbutton[[2]]$TrackingDay),1))
+            error11
+        })
+       
+    })
+    observeEvent(input$jly7, {
+        output$error11<-renderPlot({
+            error11<-ggplot(NULL,aes(TrackingDay,Value))
+            error11<-error11+geom_col(data=jlyprovbutton[[2]],size=1,col=clrs[2],fill=clrs[2])
+            error11<-error11+scale_y_continuous(breaks =seq(0,20,1))+labs(title = "Residual Error Measurements Over Tracking Period(PEI)")
+            error11<-error11+scale_x_continuous(breaks = seq(min(jlyprovbutton[[2]]$TrackingDay),max(jlyprovbutton[[2]]$TrackingDay),1))
+            error11
+        })
+       
+    })
+    #Nova Scotia
+    output$error12<-renderPlot({
+        error12<-ggplot(NULL,aes(TrackingDay,Value))
+        error12<-error12+geom_col(data=aprprovbutton[[3]],size=1,col=clrs[3],fill=clrs[3])
+        error12<-error12+scale_y_continuous(breaks =seq(0,20,1))+labs(title = "Nova Scotia")
+        error12<-error12+scale_x_continuous(breaks = seq(min(aprprovbutton[[3]]$TrackingDay),max(aprprovbutton[[3]]$TrackingDay),1))
+        error12
+    })
+    observeEvent(input$apr7,{
+        output$error12<-renderPlot({
+            error12<-ggplot(NULL,aes(TrackingDay,Value))
+            error12<-error12+geom_col(data=aprprovbutton[[3]],size=1,col=clrs[3],fill=clrs[3])
+            error12<-error12+scale_y_continuous(breaks =seq(0,20,1))+labs(title = "Nova Scotia")
+            error12<-error12+scale_x_continuous(breaks = seq(min(aprprovbutton[[3]]$TrackingDay),max(aprprovbutton[[3]]$TrackingDay),1))
+            error12
+        })
+    })
+    observeEvent(input$may7, {
+        output$error12<-renderPlot({
+            error12<-ggplot(NULL,aes(TrackingDay,Value))
+            error12<-error12+geom_col(data=mayprovbutton[[3]],size=1,col=clrs[3],fill=clrs[3])
+            error12<-error12+scale_y_continuous(breaks =seq(0,20,1))+labs(title = "Nova Scotia")
+            error12<-error12+scale_x_continuous(breaks = seq(min(mayprovbutton[[3]]$TrackingDay),max(mayprovbutton[[3]]$TrackingDay),1))
+            error12
+        })
+    })
+    observeEvent(input$jne7, {
+        output$error12<-renderPlot({
+            error12<-ggplot(NULL,aes(TrackingDay,Value))
+            error12<-error12+geom_col(data=jneprovbutton[[3]],size=1,col=clrs[3],fill=clrs[3])
+            error12<-error12+scale_y_continuous(breaks =seq(0,20,1))+labs(title = "Nova Scotia")
+            error12<-error12+scale_x_continuous(breaks = seq(min(jneprovbutton[[3]]$TrackingDay),max(jneprovbutton[[3]]$TrackingDay),1))
+            error12
+        })
+    })
+    #New Brunswick
+    output$error13<-renderPlot({
+        error13<-ggplot(NULL,aes(TrackingDay,Value))
+        error13<-error13+geom_col(data=aprprovbutton[[4]],size=1,col=clrs[4],fill=clrs[4])
+        error13<-error13+scale_y_continuous(breaks =seq(0,20,1))+labs(title = "New Brunswick")
+        error13<-error13+scale_x_continuous(breaks = seq(min(aprprovbutton[[4]]$TrackingDay),max(aprprovbutton[[4]]$TrackingDay),1))
+        error13
+    })
+    observeEvent(input$apr7,{
+        output$error13<-renderPlot({
+            error13<-ggplot(NULL,aes(TrackingDay,Value))
+            error13<-error13+geom_col(data=aprprovbutton[[4]],size=1,col=clrs[4],fill=clrs[4])
+            error13<-error13+scale_y_continuous(breaks =seq(0,20,1))+labs(title = "New Brunswick")
+            error13<-error13+scale_x_continuous(breaks = seq(min(aprprovbutton[[4]]$TrackingDay),max(aprprovbutton[[4]]$TrackingDay),1))
+            error13
+        })
+    })
+    observeEvent(input$may7, {
+        output$error13<-renderPlot({
+            error13<-ggplot(NULL,aes(TrackingDay,Value))
+            error13<-error13+geom_col(data=mayprovbutton[[4]],size=1,col=clrs[4],fill=clrs[4])
+            error13<-error13+scale_y_continuous(breaks =seq(0,20,1))+labs(title = "New Brunswick")
+            error13<-error13+scale_x_continuous(breaks = seq(min(mayprovbutton[[4]]$TrackingDay),max(mayprovbutton[[4]]$TrackingDay),1))
+            error13
+        })
+    })
+    observeEvent(input$jne7, {
+        output$error13<-renderPlot({
+            error13<-ggplot(NULL,aes(TrackingDay,Value))
+            error13<-error13+geom_col(data=jneprovbutton[[4]],size=1,col=clrs[4],fill=clrs[4])
+            error13<-error13+scale_y_continuous(breaks =seq(0,20,1))+labs(title = "New Brunswick")
+            error13<-error13+scale_x_continuous(breaks = seq(min(jneprovbutton[[4]]$TrackingDay),max(jneprovbutton[[4]]$TrackingDay),1))
+            error13
+        })
+    })
+    observeEvent(input$jly7, {
+        output$error13<-renderPlot({
+            error13<-ggplot(NULL,aes(TrackingDay,Value))
+            error13<-error13+geom_col(data=jlyprovbutton[[4]],size=1,col=clrs[4],fill=clrs[4])
+            error13<-error13+scale_y_continuous(breaks =seq(0,20,1))+labs(title = "New Brunswick")
+            error13<-error13+scale_x_continuous(breaks = seq(min(jlyprovbutton[[4]]$TrackingDay),max(jlyprovbutton[[4]]$TrackingDay),1))
+            error13
+        })
+    })
+    #Quebec
+    output$quebec<-renderPlot({
+        error24<-ggplot(NULL,aes(TrackingDay,Value))
+        error24<-error24+geom_col(data=aprprovbutton[[5]],size=1,col=clrs[5],fill=clrs[5])
+        error24<-error24+scale_y_continuous(breaks =seq(0,20,1))+labs(title = "Quebec")
+        error24<-error24+scale_x_continuous(breaks = seq(min(aprprovbutton[[5]]$TrackingDay),max(aprprovbutton[[5]]$TrackingDay),1))
+        error24
+    })
+    observeEvent(input$apr7,{
+        output$quebec<-renderPlot({
+            error24<-ggplot(NULL,aes(TrackingDay,Value))
+            error24<-error24+geom_col(data=aprprovbutton[[5]],size=1,col=clrs[5],fill=clrs[5])
+            error24<-error24+scale_y_continuous(breaks =seq(0,20,1))+labs(title = "Quebec")
+            error24<-error24+scale_x_continuous(breaks = seq(min(aprprovbutton[[5]]$TrackingDay),max(aprprovbutton[[5]]$TrackingDay),1))
+            error24
+        })
+    })
+    observeEvent(input$may7, {
+        output$quebec<-renderPlot({
+            error24<-ggplot(NULL,aes(TrackingDay,Value))
+            error24<-error24+geom_col(data=mayprovbutton[[5]],size=1,col=clrs[5],fill=clrs[5])
+            error24<-error24+scale_y_continuous(breaks =seq(0,20,1))+labs(title = "Quebec")
+            error24<-error24+scale_x_continuous(breaks = seq(min(mayprovbutton[[5]]$TrackingDay),max(mayprovbutton[[5]]$TrackingDay),1))
+            error24
+        })
+    })
+    observeEvent(input$jne7, {
+        output$quebec<-renderPlot({
+            error24<-ggplot(NULL,aes(TrackingDay,Value))
+            error24<-error24+geom_col(data=jneprovbutton[[5]],size=1,col=clrs[5],fill=clrs[5])
+            error24<-error24+scale_y_continuous(breaks =seq(0,20,1))+labs(title = "Quebec")
+            error24<-error24+scale_x_continuous(breaks = seq(min(jneprovbutton[[5]]$TrackingDay),max(jneprovbutton[[5]]$TrackingDay),1))
+            error24
+        })
+    })
+    observeEvent(input$jly7, {
+        output$quebec<-renderPlot({
+            error24<-ggplot(NULL,aes(TrackingDay,Value))
+            error24<-error24+geom_col(data=jlyprovbutton[[5]],size=1,col=clrs[5],fill=clrs[5])
+            error24<-error24+scale_y_continuous(breaks =seq(0,20,1))+labs(title = "Quebec")
+            error24<-error24+scale_x_continuous(breaks = seq(min(jlyprovbutton[[5]]$TrackingDay),max(jlyprovbutton[[5]]$TrackingDay),1))
+            error24
+        })
+    })
+    #Ontario
+    output$error35<-renderPlot({
+        error35<-ggplot(NULL,aes(TrackingDay,Value))
+        error35<-error35+geom_col(data=aprprovbutton[[6]],size=1,col=clrs[6],fill=clrs[6])
+        error35<-error35+scale_y_continuous(breaks =seq(0,20,1))+labs(title = "Ontario")
+        error35<-error35+scale_x_continuous(breaks = seq(min(aprprovbutton[[6]]$TrackingDay),max(aprprovbutton[[6]]$TrackingDay),1))
+        error35
+    })
+    observeEvent(input$apr7,{
+        output$error35<-renderPlot({
+            error35<-ggplot(NULL,aes(TrackingDay,Value))
+            error35<-error35+geom_col(data=aprprovbutton[[6]],size=1,col=clrs[6],fill=clrs[6])
+            error35<-error35+scale_y_continuous(breaks =seq(0,20,1))+labs(title = "Ontario")
+            error35<-error35+scale_x_continuous(breaks = seq(min(aprprovbutton[[6]]$TrackingDay),max(aprprovbutton[[6]]$TrackingDay),1))
+            error35
+        })
+    })
+    observeEvent(input$may7, {
+        output$error35<-renderPlot({
+            error35<-ggplot(NULL,aes(TrackingDay,Value))
+            error35<-error35+geom_col(data=mayprovbutton[[6]],size=1,col=clrs[6],fill=clrs[6])
+            error35<-error35+scale_y_continuous(breaks =seq(0,20,1))+labs(title = "Ontario")
+            error35<-error35+scale_x_continuous(breaks = seq(min(mayprovbutton[[6]]$TrackingDay),max(mayprovbutton[[6]]$TrackingDay),1))
+            error35
+        })
+    })
+    observeEvent(input$jne7, {
+        output$error35<-renderPlot({
+            error35<-ggplot(NULL,aes(TrackingDay,Value))
+            error35<-error35+geom_col(data=jneprovbutton[[6]],size=1,col=clrs[6],fill=clrs[6])
+            error35<-error35+scale_y_continuous(breaks =seq(0,20,1))+labs(title = "Ontario")
+            error35<-error35+scale_x_continuous(breaks = seq(min(jneprovbutton[[6]]$TrackingDay),max(jneprovbutton[[6]]$TrackingDay),1))
+            error35
+        })
+    })
+    observeEvent(input$jly7, {
+        output$error35<-renderPlot({
+            error35<-ggplot(NULL,aes(TrackingDay,Value))
+            error35<-error35+geom_col(data=jlyprovbutton[[6]],size=1,col=clrs[6],fill=clrs[6])
+            error35<-error35+scale_y_continuous(breaks =seq(0,20,1))+labs(title = "Ontario")
+            error35<-error35+scale_x_continuous(breaks = seq(min(jlyprovbutton[[6]]$TrackingDay),max(jlyprovbutton[[6]]$TrackingDay),1))
+            error35
+        })
+    })
+    #Manitoba
+    output$error46<-renderPlot({
+        error46<-ggplot(NULL,aes(TrackingDay,Value))
+        error46<-error46+geom_col(data=aprprovbutton[[7]],size=1,col=clrs[7],fill=clrs[7])
+        error46<-error46+scale_y_continuous(breaks =seq(0,20,1))+labs(title = "Manitoba")
+        error46<-error46+scale_x_continuous(breaks = seq(min(aprprovbutton[[7]]$TrackingDay),max(aprprovbutton[[7]]$TrackingDay),1))
+        error46
+    })
+    observeEvent(input$apr7,{
+        output$error46<-renderPlot({
+            error46<-ggplot(NULL,aes(TrackingDay,Value))
+            error46<-error46+geom_col(data=aprprovbutton[[7]],size=1,col=clrs[7],fill=clrs[7])
+            error46<-error46+scale_y_continuous(breaks =seq(0,20,1))+labs(title = "Manitoba")
+            error46<-error46+scale_x_continuous(breaks = seq(min(aprprovbutton[[7]]$TrackingDay),max(aprprovbutton[[7]]$TrackingDay),1))
+            error46
+        })
+    })
+    observeEvent(input$may7, {
+        output$error46<-renderPlot({
+            error46<-ggplot(NULL,aes(TrackingDay,Value))
+            error46<-error46+geom_col(data=mayprovbutton[[7]],size=1,col=clrs[7],fill=clrs[7])
+            error46<-error46+scale_y_continuous(breaks =seq(0,20,1))+labs(title = "Manitoba")
+            error46<-error46+scale_x_continuous(breaks = seq(min(mayprovbutton[[7]]$TrackingDay),max(mayprovbutton[[7]]$TrackingDay),1))
+            error46
+        })
+    })
+    observeEvent(input$jne7, {
+        output$error46<-renderPlot({
+            error46<-ggplot(NULL,aes(TrackingDay,Value))
+            error46<-error46+geom_col(data=jneprovbutton[[7]],size=1,col=clrs[7],fill=clrs[7])
+            error46<-error46+scale_y_continuous(breaks =seq(0,20,1))+labs(title = "Manitoba")
+            error46<-error46+scale_x_continuous(breaks = seq(min(jneprovbutton[[7]]$TrackingDay),max(jneprovbutton[[7]]$TrackingDay),1))
+            error46
+        })
+    })
+    observeEvent(input$jly7, {
+        output$error46<-renderPlot({
+            error46<-ggplot(NULL,aes(TrackingDay,Value))
+            error46<-error46+geom_col(data=jlyprovbutton[[7]],size=1,col=clrs[7],fill=clrs[7])
+            error46<-error46+scale_y_continuous(breaks =seq(0,20,1))+labs(title = "Manitoba")
+            error46<-error46+scale_x_continuous(breaks = seq(min(jlyprovbutton[[7]]$TrackingDay),max(jlyprovbutton[[7]]$TrackingDay),1))
+            error46
+        })
+    })
+    #Sask
+    output$error47<-renderPlot({
+        error47<-ggplot(NULL,aes(TrackingDay,Value))
+        error47<-error47+geom_col(data=aprprovbutton[[8]],size=1,col=clrs[8],fill=clrs[8])
+        error47<-error47+scale_y_continuous(breaks =seq(0,20,1))+labs(title = "Sask")
+        error47<-error47+scale_x_continuous(breaks = seq(min(aprprovbutton[[8]]$TrackingDay),max(aprprovbutton[[8]]$TrackingDay),1))
+        error47
+    })
+    observeEvent(input$apr7,{
+        output$error47<-renderPlot({
+            error47<-ggplot(NULL,aes(TrackingDay,Value))
+            error47<-error47+geom_col(data=aprprovbutton[[8]],size=1,col=clrs[8],fill=clrs[8])
+            error47<-error47+scale_y_continuous(breaks =seq(0,20,1))+labs(title = "Sask")
+            error47<-error47+scale_x_continuous(breaks = seq(min(aprprovbutton[[8]]$TrackingDay),max(aprprovbutton[[8]]$TrackingDay),1))
+            error47
+        })
+    })
+    observeEvent(input$may7, {
+        output$error47<-renderPlot({
+            error47<-ggplot(NULL,aes(TrackingDay,Value))
+            error47<-error47+geom_col(data=mayprovbutton[[8]],size=1,col=clrs[8],fill=clrs[8])
+            error47<-error47+scale_y_continuous(breaks =seq(0,20,1))+labs(title = "Sask")
+            error47<-error47+scale_x_continuous(breaks = seq(min(mayprovbutton[[8]]$TrackingDay),max(mayprovbutton[[8]]$TrackingDay),1))
+            error47
+        })
+    })
+    observeEvent(input$jne7, {
+        output$error47<-renderPlot({
+            error47<-ggplot(NULL,aes(TrackingDay,Value))
+            error47<-error47+geom_col(data=jneprovbutton[[8]],size=1,col=clrs[8],fill=clrs[8])
+            error47<-error47+scale_y_continuous(breaks =seq(0,20,1))+labs(title = "Sask")
+            error47<-error47+scale_x_continuous(breaks = seq(min(jneprovbutton[[8]]$TrackingDay),max(jneprovbutton[[8]]$TrackingDay),1))
+            error47
+        })
+    })
+    observeEvent(input$jly7, {
+        output$error47<-renderPlot({
+            error47<-ggplot(NULL,aes(TrackingDay,Value))
+            error47<-error47+geom_col(data=jlyprovbutton[[8]],size=1,col=clrs[8],fill=clrs[8])
+            error47<-error47+scale_y_continuous(breaks =seq(0,20,1))+labs(title = "Sask")
+            error47<-error47+scale_x_continuous(breaks = seq(min(jlyprovbutton[[8]]$TrackingDay),max(jlyprovbutton[[8]]$TrackingDay),1))
+            error47
+        })
+    })
+    #ALBERTA
+    output$error48<-renderPlot({
+        error48<-ggplot(NULL,aes(TrackingDay,Value))
+        error48<-error48+geom_col(data=aprprovbutton[[9]],size=1,col=clrs[9],fill=clrs[9])
+        error48<-error48+scale_y_continuous(breaks =seq(0,20,1))+labs(title = "Alberta")
+        error48<-error48+scale_x_continuous(breaks = seq(min(aprprovbutton[[9]]$TrackingDay),max(aprprovbutton[[9]]$TrackingDay),1))
+        error48
+    })
+    observeEvent(input$apr7,{
+        output$error48<-renderPlot({
+            error48<-ggplot(NULL,aes(TrackingDay,Value))
+            error48<-error48+geom_col(data=aprprovbutton[[9]],size=1,col=clrs[9],fill=clrs[9])
+            error48<-error48+scale_y_continuous(breaks =seq(0,20,1))+labs(title = "Alberta")
+            error48<-error48+scale_x_continuous(breaks = seq(min(aprprovbutton[[9]]$TrackingDay),max(aprprovbutton[[9]]$TrackingDay),1))
+            error48
+        })
+    })
+    observeEvent(input$may7, {
+        output$error48<-renderPlot({
+            error48<-ggplot(NULL,aes(TrackingDay,Value))
+            error48<-error48+geom_col(data=mayprovbutton[[9]],size=1,col=clrs[9],fill=clrs[9])
+            error48<-error48+scale_y_continuous(breaks =seq(0,20,1))+labs(title = "Alberta")
+            error48<-error48+scale_x_continuous(breaks = seq(min(mayprovbutton[[9]]$TrackingDay),max(mayprovbutton[[9]]$TrackingDay),1))
+            error48
+        })
+    })
+    observeEvent(input$jne7, {
+        output$error48<-renderPlot({
+            error48<-ggplot(NULL,aes(TrackingDay,Value))
+            error48<-error48+geom_col(data=jneprovbutton[[9]],size=1,col=clrs[9],fill=clrs[9])
+            error48<-error48+scale_y_continuous(breaks =seq(0,20,1))+labs(title = "Alberta")
+            error48<-error48+scale_x_continuous(breaks = seq(min(jneprovbutton[[9]]$TrackingDay),max(jneprovbutton[[9]]$TrackingDay),1))
+            error48
+        })
+    })
+    observeEvent(input$jly7, {
+        output$error48<-renderPlot({
+            error48<-ggplot(NULL,aes(TrackingDay,Value))
+            error48<-error48+geom_col(data=jlyprovbutton[[9]],size=1,col=clrs[9],fill=clrs[9])
+            error48<-error48+scale_y_continuous(breaks =seq(0,20,1))+labs(title = "Alberta")
+            error48<-error48+scale_x_continuous(breaks = seq(min(jlyprovbutton[[9]]$TrackingDay),max(jlyprovbutton[[9]]$TrackingDay),1))
+            error48
+        })
+    })
+    #BRITISH COLUMBIA
+    output$error59<-renderPlot({
+        error59<-ggplot(NULL,aes(TrackingDay,Value))
+        error59<-error59+geom_col(data=aprprovbutton[[10]],size=1,col=clrs[10],fill=clrs[10])
+        error59<-error59+scale_y_continuous(breaks =seq(0,20,1))+labs(title = "British Columbia")
+        error59<-error59+scale_x_continuous(breaks = seq(min(aprprovbutton[[10]]$TrackingDay),max(aprprovbutton[[10]]$TrackingDay),1))
+        error59
+    })
+    observeEvent(input$apr7,{
+        output$error59<-renderPlot({
+            error59<-ggplot(NULL,aes(TrackingDay,Value))
+            error59<-error59+geom_col(data=aprprovbutton[[10]],size=1,col=clrs[10],fill=clrs[10])
+            error59<-error59+scale_y_continuous(breaks =seq(0,20,1))+labs(title = "British Columbia")
+            error59<-error59+scale_x_continuous(breaks = seq(min(aprprovbutton[[10]]$TrackingDay),max(aprprovbutton[[10]]$TrackingDay),1))
+            error59
+        })
+    })
+    observeEvent(input$may7, {
+        output$error59<-renderPlot({
+            error59<-ggplot(NULL,aes(TrackingDay,Value))
+            error59<-error59+geom_col(data=mayprovbutton[[10]],size=1,col=clrs[10],fill=clrs[10])
+            error59<-error59+scale_y_continuous(breaks =seq(0,20,1))+labs(title = "British Columbia")
+            error59<-error59+scale_x_continuous(breaks = seq(min(mayprovbutton[[10]]$TrackingDay),max(mayprovbutton[[10]]$TrackingDay),1))
+            error59
+        })
+    })
+    observeEvent(input$jne7, {
+        output$error59<-renderPlot({
+            error59<-ggplot(NULL,aes(TrackingDay,Value))
+            error59<-error59+geom_col(data=jneprovbutton[[10]],size=1,col=clrs[10],fill=clrs[10])
+            error59<-error59+scale_y_continuous(breaks =seq(0,20,1))+labs(title = "British Columbia")
+            error59<-error59+scale_x_continuous(breaks = seq(min(jneprovbutton[[10]]$TrackingDay),max(jneprovbutton[[10]]$TrackingDay),1))
+            error59
+        })
+    })
+    observeEvent(input$jly7, {
+        output$error59<-renderPlot({
+            error59<-ggplot(NULL,aes(TrackingDay,Value))
+            error59<-error59+geom_col(data=jlyprovbutton[[10]],size=1,col=clrs[10],fill=clrs[10])
+            error59<-error59+scale_y_continuous(breaks =seq(0,20,1))+labs(title = "British Columbia")
+            error59<-error59+scale_x_continuous(breaks = seq(min(jlyprovbutton[[10]]$TrackingDay),max(jlyprovbutton[[10]]$TrackingDay),1))
+            error59
+        })
+    })
+}
+shinyApp(ui = ui, server = server)
+```
+
+This method of storing output values in an object consolidates the coding of **80 data-frames into 33 lines**.
+
+You might have noticed a table located next to the provincial graphs above, the next section of the program designs those outputs:
+
+```{r}
+# clr<-vector("character",10)-creates a vector to color code the geo codes in the graph
+# clr[1]="Green"
+# clr[2]="Purple"
+# clr[3]="Blue"
+# clr[4]="Red"
+# clr[5]="Orange"
+# clr[6]="Pink"
+# clr[7]="Black"
+# clr[8]="Yellow"
+# clr[9]="Turqoise"
+# clr[10]="Magenta"
+# aprmm<-as.data.frame(matrix(0,nrow = 10,ncol = 4))#data frames consisting of the maximum and minimum values of geo tracked
+# aprmm[1:10,1]<-formclmnf[1:10,1]#produces the range and color coordinates with graph in Tab 3
+# maymm<-as.data.frame(matrix(0,nrow = 10,ncol = 4))
+# maymm[1:10,1]<-formclmnf[1:10,1]
+# jnemm<-as.data.frame(matrix(0,nrow = 10,ncol = 4))
+# jnemm[1:10,1]<-formclmnf[1:10,1]
+# jlymm<-as.data.frame(matrix(0,nrow = 10,ncol = 4))
+# jlymm[1:10,1]<-formclmnf[1:10,1]
+# for(h in 1:10)#loops 10 times for 10 provinces observed
+# {
+#   aprmm[h,2]<-min(aprbutton[[h]][1:8,1])fills second column with minimum/maximum value for each of 10
+#   aprmm[h,3]<-max(aprbutton[[h]][1:8,1])...frames stored in object
+#   aprmm[h,4]<-abs(aprmm[h,2]-aprmm[h,3])takes difference of max and miin to get range of values for
+#   maymm[h,2]<-min(maybutton[[h]][1:8,1])...specific geo
+#   maymm[h,3]<-max(maybutton[[h]][1:8,1])
+#   maymm[h,4]<-abs(maymm[h,2]-maymm[h,3])
+#   jnemm[h,2]<-min(jnebutton[[h]][1:8,1])
+#   jnemm[h,3]<-max(jnebutton[[h]][1:8,1])
+#   jnemm[h,4]<-abs(jnemm[h,2]-jnemm[h,3])
+#   jlymm[h,2]<-min(jlybutton[[h]][1:8,1])
+#   jlymm[h,3]<-max(jlybutton[[h]][1:8,1])
+#   jlymm[h,4]<-abs(jlymm[h,2]-jlymm[h,3])
+# }
+# aprmm<-cbind(clr,aprmm)
+# colnames(aprmm)<-c("Colour","GC","Min","Max","Range")
+# maymm<-cbind(clr,maymm)
+# colnames(maymm)<-c("Colour","GC","Min","Max","Range")
+# jnemm<-cbind(clr,jnemm)
+# colnames(jnemm)<-c("Colour","GC","Min","Max","Range")
+# jlymm<-cbind(clr,jlymm)
+# colnames(jlymm)<-c("Colour","GC","Min","Max","Range")
+```
+
+The usefulness of these statistics cannot be undervalued, each provinces' corresponding range plays a major role in some of the findings in the project as they reveal the level of variability attached to each province in each tracking period. More on this in the findings section of the report.
+
+Something you might also have noticed in a handful of the above code chunks was a month acronym attached to the variable discussed. It's clear to see these produce the reactive buttons located at the top of most tables and visuals. The purpose of this month segmentation is to add another scale of manipulation to analyze the data further. There are valuable pieces of information in the day-over-day facets of the data but when examining those same periods month-over-month, interesting trends emerge.
+
+The final element integral to the program is the absolute error analysis chunks. As mentioned earlier in the report, directional correctness was the primary objective but the application would not be as informative without the supplementary programs measuring accuracy at the provincial and national level.
+
+The development process of these statistics is fairly straightforward:
+
+```{r}
+# for (w2 in 1:7)
+# {
+#   abserrorapr[w2,1]<-abs(canobsapr-cangraphapr[w2,1])
+#   abserrormay[w2,1]<-abs(canobsmay-cangraphmay[w2,1])
+#   abserrorjne[w2,1]<-abs(canobsjne-cangraphjne[w2,1])
+#   abserrorjly[w2,1]<-abs(canobsjly-cangraphjly[w2,1])
+# }
+```
+
+The monthly data-frames are filled with the **absolute difference** between the final tracking day MOM value and each previous day's corresponding value. This serves the purpose of identifying days each month with the lowest and highest amount of difference compared to the finalized number as visualized in the below graph:
+
+```{r, echo=FALSE}
+ui <- fluidPage(
+    tabPanel("The Optimal Date(Canada)",actionButton("apr6","April"),actionButton("may6","May"),actionButton("jne6","June"),actionButton("jly6","July"),plotOutput("abserror")),
+    )
+server <- function(input, output) {
+    absplot<-ggplot(abserrorapr,aes(TrackingDay,Value))+labs(title = "Residual Error Measurements Over Tracking Period(Canada)")+scale_x_continuous(breaks = seq(min(abserrorapr$TrackingDay),max(abserrorapr$TrackingDay),2))
+    absplot<-absplot+geom_col(col="purple",fill="lightblue")
+    output$abserror<-renderPlot({absplot})
+    observeEvent(input$apr6, {
+        absplot<-ggplot(abserrorapr,aes(TrackingDay,Value))+labs(title = "Residual Error Measurements Over Tracking Period(Canada)")+scale_x_continuous(breaks = seq(min(abserrorapr$TrackingDay),max(abserrorapr$TrackingDay),2))
+        absplot<-absplot+geom_col(col="purple",fill="lightblue")
+        output$abserror<-renderPlot({absplot})
+    })
+    observeEvent(input$may6, {
+        absplot<-ggplot(abserrormay,aes(TrackingDay,Value))+labs(title = "Residual Error Measurements Over Tracking Period(Canada)")+scale_x_continuous(breaks = seq(min(abserrormay$TrackingDay),max(abserrormay$TrackingDay),2))
+        absplot<-absplot+geom_col(col="purple",fill="lightblue")
+        output$abserror<-renderPlot({absplot})
+    })
+    observeEvent(input$jne6, {
+        absplot<-ggplot(abserrorjne,aes(TrackingDay,Value))+labs(title = "Residual Error Measurements Over Tracking Period(Canada)")+scale_x_continuous(breaks = seq(min(abserrorjne$TrackingDay),max(abserrorjne$TrackingDay),2))
+        absplot<-absplot+geom_col(col="purple",fill="lightblue")
+        output$abserror<-renderPlot({absplot})
+    })
+    observeEvent(input$jly6, {
+        absplot<-ggplot(abserrorjly,aes(TrackingDay,Value))+labs(title = "Residual Error Measurements Over Tracking Period(Canada)")+scale_x_continuous(breaks = seq(min(abserrorjly$TrackingDay),max(abserrorjly$TrackingDay),2))
+        absplot<-absplot+geom_col(col="purple",fill="lightblue")
+        output$abserror<-renderPlot({absplot})
+    })
+}
+shinyApp(ui = ui, server = server)
+```
+
+Unsurprisingly, the same operations were used to design the provincial adaptation of this graph. Difference being the presence of the max-min tables again as a drill-down of what separates the provincial and national level data.
+
+```{r, echo=FALSE}
+ui <- fluidPage(
+    tabPanel("The Optimal Date(By Province)",actionButton("apr7","April"),actionButton("may7","May"),actionButton("jne7","June"),actionButton("jly7","July"),
+             fluidRow(checkboxGroupInput("prvslct2",label="Choose Province(s)",selected=formclmnf[1:10,1],inline=TRUE,choices=formclmnf[1:10,1]),
+                      splitLayout(cellWidths=c("73%","27%"),plotOutput("proverror",width=1000,height = 450),tableOutput("aemm")))))
+server <- function(input, output) {
+    clrs<-c("green","purple","blue","red","orange","pink","black","yellow","turquoise3","magenta")
+    output$proverror<-renderPlot({
+        proverror<-ggplot(NULL,aes(TrackingDay,Value))
+        for(c in 1:10)
+        {
+            if(formclmnf[c,1]%in% input$prvslct2)
+            {
+                proverror<-proverror+geom_path(data=aprprovbutton[[c]],size=1,col=clrs[c],fill=clrs[c])
+                proverror<-proverror+scale_y_continuous(breaks =seq(0,20,1))
+            }
+        }
+        output$aemm<-renderTable(apraemm)
+        proverror<-proverror+labs(title = "Residual Error Measurements Over Tracking Period(By Province)")+scale_x_continuous(breaks = seq(min(aprprovbutton[[c]]$TrackingDay),max(aprprovbutton[[c]]$TrackingDay),2))
+        proverror
+       
+    })
+    observeEvent(input$apr7, {
+        output$proverror<-renderPlot({
+            proverror<-ggplot(NULL,aes(TrackingDay,Value))
+            for(c in 1:10)
+            {
+                if(formclmnf[c,1]%in% input$prvslct2)
+                {
+                    proverror<-proverror+geom_path(data=aprprovbutton[[c]],size=1,col=clrs[c],fill=clrs[c])
+                    proverror<-proverror+scale_y_continuous(breaks =seq(0,20,1))
+                }
+            }
+            output$aemm<-renderTable(apraemm)
+            proverror<-proverror+labs(title = "Residual Error Measurements Over Tracking Period(By Province)")+scale_x_continuous(breaks = seq(min(aprprovbutton[[c]]$TrackingDay),max(aprprovbutton[[c]]$TrackingDay),2))
+            proverror
+           
+        })
+       
+       
+    })
+    observeEvent(input$may7, {
+        output$proverror<-renderPlot({
+            proverror<-ggplot(NULL,aes(TrackingDay,Value))
+            for(c in 1:10)
+            {
+                if(formclmnf[c,1]%in% input$prvslct2)
+                {
+                    proverror<-proverror+geom_path(data=mayprovbutton[[c]],size=1,col=clrs[c],fill=clrs[c])
+                    proverror<-proverror+scale_y_continuous(breaks =seq(0,20,1))
+                }
+            }
+            output$aemm<-renderTable(mayaemm)
+            proverror<-proverror+labs(title = "Residual Error Measurements Over Tracking Period(By Province)")+scale_x_continuous(breaks = seq(min(mayprovbutton[[c]]$TrackingDay),max(mayprovbutton[[c]]$TrackingDay),2))
+            proverror
+           
+        })
+    })
+    observeEvent(input$jne7, {
+        output$proverror<-renderPlot({
+            proverror<-ggplot(NULL,aes(TrackingDay,Value))
+            for(c in 1:10)
+            {
+                if(formclmnf[c,1]%in% input$prvslct2)
+                {
+                    proverror<-proverror+geom_path(data=jneprovbutton[[c]],size=1,col=clrs[c],fill=clrs[c])
+                    proverror<-proverror+scale_y_continuous(breaks =seq(0,20,1))
+                }
+            }
+            output$aemm<-renderTable(jneaemm)
+            proverror<-proverror+labs(title = "Residual Error Measurements Over Tracking Period(By Province)")+scale_x_continuous(breaks = seq(min(jneprovbutton[[c]]$TrackingDay),max(jneprovbutton[[c]]$TrackingDay),2))
+            proverror
+           
+        })
+    })
+    observeEvent(input$jly7, {
+        output$proverror<-renderPlot({
+            proverror<-ggplot(NULL,aes(TrackingDay,Value))
+            for(c in 1:10)
+            {
+                if(formclmnf[c,1]%in% input$prvslct2)
+                {
+                    proverror<-proverror+geom_path(data=jlyprovbutton[[c]],size=1,col=clrs[c],fill=clrs[c])
+                    proverror<-proverror+scale_y_continuous(breaks =seq(0,20,1))
+                }
+            }
+            output$aemm<-renderTable(jlyaemm)
+            proverror<-proverror+labs(title = "Residual Error Measurements Over Tracking Period(By Province)")+scale_x_continuous(breaks = seq(min(jlyprovbutton[[c]]$TrackingDay),max(jlyprovbutton[[c]]$TrackingDay),2))
+            proverror
+           
+        })
+    })
+}
+shinyApp(ui = ui, server = server)
+```
+
+## Experiment Findings/Results:
+
+Let's start with the results of the extract, transform and load processes or ETLing for short. The provincial tracking table indicates a high probability for large swings in value of the month over month percentage change variable on a daily basis over the tracking period. Meaning, the provincial statistics are less accurate than the national number. To put it quantitatively, the maximum absolute error observed at the national level is **1/8th** the max amount of error at the provincial level. Across all provinces, there is also a higher range of variability in smaller provinces/territories with provinces like Newfoundland & Labrador producing, at minimum, **3.35x** the amount of error observed in larger provinces such as Ontario. However, larger provinces such as Quebec, Alberta and Ontario struggled to accurately determine the direction of the month-over-month change.This could indicate directional accuracy is negatively correlated with the survey's G-weight.
+
+Turning attention over to the weighted response rate variable, there were a few notable observations. The first being that at the current finalization date of the Early Indicator(day 3 of tracking period), the average weighted response rate sits in the 50-60% range. This is shockingly low, however, historical data indicates there is positive correlation between the lack of responses and the April to August time of the year. This supports the imperative need to monitor the variable over a prolonged period in order to validate the effect of this correlation. The second important observation comes from the directional correctness statistics of the web app:
+
+```{r, echo=FALSE}
+ui <- fluidPage(
+    tabPanel("Directionality Statistics",actionButton("apr8","April"),actionButton("may8","May"),actionButton("jne8","June"),actionButton("jly8","July"),
+             fluidRow(splitLayout(cellWidths=c("47%","53%"),tableOutput("TFtable"),plotOutput("TFgraph")))
+             
+    )#end of panel
+)
+server <- function(input, output) {
+    output$TFtable<-renderTable(aprMDT)
+    observeEvent(input$apr8,{output$TFtable<-renderTable(aprMDT)})
+    observeEvent(input$may8,{output$TFtable<-renderTable(mayMDT)})
+    observeEvent(input$jne8,{output$TFtable<-renderTable(jneMDT)})
+    observeEvent(input$jly8,{output$TFtable<-renderTable(jlyMDT)})
+    TF<-ggplot(aprdirgph,aes(TrackingDay,Value))+labs(title = "Direction Accuracy over Tracking Period")+scale_x_continuous(breaks = seq(min(aprdirgph$TrackingDay),max(aprdirgph$TrackingDay)))
+    TF<-TF+geom_path(data=aprdirgph,size=2,col="navy")
+    TF<-TF+geom_path(data=aprwrr,size=2,col="red")
+    output$TFgraph<-renderPlot(TF)
+    observeEvent(input$apr8,{
+        TF<-ggplot(aprdirgph,aes(TrackingDay,Value))+labs(title = "Direction Accuracy over Tracking Period")+scale_x_continuous(breaks = seq(min(aprdirgph$TrackingDay),max(aprdirgph$TrackingDay)))
+        TF<-TF+geom_path(data=aprdirgph,size=2,col="navy")
+        TF<-TF+geom_path(data=aprwrr,size=2,col="red")
+        output$TFgraph<-renderPlot(TF)
+    }
+    )
+    observeEvent(input$may8,{
+        TF<-ggplot(maydirgph,aes(TrackingDay,Value))+labs(title = "Direction Accuracy over Tracking Period")+scale_x_continuous(breaks = seq(min(maydirgph$TrackingDay),max(maydirgph$TrackingDay)))
+        TF<-TF+geom_path(data=maydirgph,size=2,col="navy")
+        TF<-TF+geom_path(data=maywrr,size=2,col="red")
+        output$TFgraph<-renderPlot(TF)
+    })
+    observeEvent(input$jne8,{
+        TF<-ggplot(jnedirgph,aes(TrackingDay,Value))+labs(title = "Direction Accuracy over Tracking Period")+scale_x_continuous(breaks = seq(min(jnedirgph$TrackingDay),max(jnedirgph$TrackingDay)))
+        TF<-TF+geom_path(data=jnedirgph,size=2,col="navy")
+        TF<-TF+geom_path(data=jnewrr,size=2,col="red")
+        output$TFgraph<-renderPlot(TF)
+    })
+    observeEvent(input$jly8,{
+        TF<-ggplot(jlydirgph,aes(TrackingDay,Value))+labs(title = "Direction Accuracy over Tracking Period")+scale_x_continuous(breaks = seq(min(jlydirgph$TrackingDay),max(jlydirgph$TrackingDay)))
+        TF<-TF+geom_path(data=jlydirgph,size=2,col="navy")
+        TF<-TF+geom_path(data=jlywrr,size=2,col="red")
+        output$TFgraph<-renderPlot(TF)
+    })
+}
+shinyApp(ui = ui, server = server)
+```
+
+In ¾ of the months observed, once the weighted response rate hit 50%, the directional correctness took off. This does not necessarily point to a finalization date that maxes out the ratio of provinces producing values with the correct direction but does reveal the possibility for an interesting trend to emerge, it would be wise to monitor this observation further.
+
+Finally, returning back to a point alluded to earlier, larger provinces like Ontario and Quebec ranked near the bottom in directional accuracy terms but were both in the top 5 for least amount of absolute error, Ontario ranking #1. This trend seems peculiar at face-value. One possibility for the negative correlation between direction predictability and absolute error minimization is the provinces' day-over-day values. The values of larger provinces straddle the zero point of the number line while the smaller depict no specific range binding their value. Is this related to weighting?
+
+Next, we turn our attention to the crux of the experiment, what is the optimal date of release? Prior to the experiment, the Early Indicator was a short paragraph publishing the national month-over-month percentage change. Currently, in accordance with the established production schedule, this report's numbers are finalized 3 days after the release of the previous month's Daily, placing it on Day 3 of the aforementioned tracking period. Following the enumeration of provincial optimal points, a definitive trend emerged indicating that from day 1 to 7 of the tracking period there are sufficient decreases of total error from day to day. Across the observed provinces:
+
+• Day 1 had a total error of 97.82
+
+• Day 2 had a total error of 93.79
+
+• Day 3 had a total error of 79.81
+
+• Day 4 had a total error of 79.43
+
+• Day 5 had a total error of 63.25
+
+• Day 6 had a total error of 55.21
+
+• Day 7 had a total error of 41.41
+
+An overall decrease of **58%**, indicating the longer we push to finalize the data the better. However, considering the Early Indicator time requirements, Day 5 would be the farthest we could push finalization which would be the optimal date at the provincial level. At the national level, enumeration had Day 4 with the lowest average absolute error. However, the second-lowest date was Day 5 with an insignificant difference between the two. Therefore, Day 5 would also result in significantly less error than the current date of Day 3.
+
+To offer up a different perspective, would the Early Indicator be more effective with additional information in a staggered release format? Given that the information currently published is only the national MOM, a staggered and consistent revision on the following day would fulfill the objectives of releasing more content in the Early Indicator and publishing the most timely and reliable data.
+
+Turning attention back to directional correctness, a more in-depth analysis of provincial directional accuracy was conducted against the corresponding absolute error minimization chart. An enumeration of accuracy ratios over the four-month period produced this ranking:
+
+1.  Day 7, with an average accuracy ratio of 89%
+
+2.  Day 6, with an average accuracy ratio of 85%
+
+3.  Day 5, 3 and 1 with an average accuracy ratio of 81%
+
+4.  Day 4, with an average accuracy ratio of 71%
+
+This ranking reveals a possible shortcoming to selecting Day 4 as the new finalization date as it may be beneficial to the supplementary goal of minimizing absolute error at the national level but severely impacts the direction accuracy of the provinces.
+
+Taking a step back and looking at the bigger picture, Day 7 produces the minimum total error and the highest directional accuracy ratio across the geos. Additionally, at the national level, Day 7 tied Day 5 for the second lowest average absolute error value at 0.58 and the lowest only being 0.54. Thinking about where this falls in the production cycle, this would put Early Indicator finalization 2 days before the first run of production and publication one day after the beginning of production. Obviously, this falls at one end of the time/accuracy spectrum and would be more of a burden than a benefit. Important observation to take note of however.
+
+## Conclusions
+
+These findings illuminate a few conclusions to consider moving forward. The first being that after four months of tracking, a staggered release of the national and provincial month-over-month value would be the most efficient. With Day 5 being the best for provincial numbers and Day 4 best for the national number. Additionally, it's abundantly clear that trends witnessed in the directional accuracy portion of the experiment should be monitored further. Mainly because of their inconsistency but more importantly because of their significant impact to the decision-making process this experiment introduces. This is evident in the directional accuracy ratio analysis as does not have a clear optimal date that effectively considers the time/accuracy trade-off. The seasonal fluctuations in the weighted response rate could also reveal/support this emerging trend as well as its threshold relations to the quantitative relevance of the aforementioned ratios.
